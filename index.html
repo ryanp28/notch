@@ -148,7 +148,10 @@
           <option value="Activity">Activity</option>
         </select>
         <label>Location</label>
-        <input id="destLocation" class="text-input" placeholder="City, Country" />
+        <div class="autocomplete-wrap">
+          <input id="destLocation" class="text-input" placeholder="Start typing a place..." autocomplete="off" />
+          <div id="locationSuggestions" class="suggestions-list hidden"></div>
+        </div>
         <label>Notes</label>
         <textarea id="destNotes" class="text-input" placeholder="Anything you want to remember..."></textarea>
         <label>Tags (comma separated)</label>

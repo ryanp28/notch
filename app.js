@@ -419,6 +419,8 @@ let pendingDest = null;
 let editingExistingId = null;
 let compareBucket = [];
 let compareLo = 0, compareHi = 0, compareMid = 0;
+let pendingLat = null;
+let pendingLon = null;
 
 function resetAddModal() {
   document.getElementById('destName').value = '';
@@ -428,11 +430,67 @@ function resetAddModal() {
   document.getElementById('destTags').value = '';
   document.getElementById('destPhotos').value = '';
   document.getElementById('photoPreview').innerHTML = '';
+  document.getElementById('locationSuggestions').classList.add('hidden');
   pendingPhotos = [];
+  pendingLat = null;
+  pendingLon = null;
   editingExistingId = null;
   [stepDetails, stepSentiment, stepCompare, stepDone].forEach(s => s.classList.add('hidden'));
   stepDetails.classList.remove('hidden');
   document.getElementById('addModalTitle').textContent = 'Add a Destination';
+}
+
+// ---------- LOCATION AUTOCOMPLETE (OpenStreetMap Nominatim, free/no key) ----------
+let locationDebounce = null;
+const locationInput = document.getElementById('destLocation');
+const locationSuggestionsEl = document.getElementById('locationSuggestions');
+
+locationInput.addEventListener('input', () => {
+  pendingLat = null;
+  pendingLon = null;
+  const term = locationInput.value.trim();
+  clearTimeout(locationDebounce);
+  if (term.length < 3) {
+    locationSuggestionsEl.classList.add('hidden');
+    return;
+  }
+  locationSuggestionsEl.innerHTML = '<div class="suggestion-loading">Searching...</div>';
+  locationSuggestionsEl.classList.remove('hidden');
+  locationDebounce = setTimeout(() => fetchLocationSuggestions(term), 400);
+});
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.autocomplete-wrap')) {
+    locationSuggestionsEl.classList.add('hidden');
+  }
+});
+
+async function fetchLocationSuggestions(term) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(term)}&addressdetails=1&limit=6`;
+    const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+    const results = await res.json();
+    if (locationInput.value.trim() !== term) return; // stale response
+    locationSuggestionsEl.innerHTML = '';
+    if (!results.length) {
+      locationSuggestionsEl.innerHTML = '<div class="suggestion-loading">No matches found</div>';
+      return;
+    }
+    results.forEach(place => {
+      const item = document.createElement('div');
+      item.className = 'suggestion-item';
+      item.textContent = place.display_name;
+      item.addEventListener('click', () => {
+        locationInput.value = place.display_name;
+        pendingLat = parseFloat(place.lat);
+        pendingLon = parseFloat(place.lon);
+        locationSuggestionsEl.classList.add('hidden');
+      });
+      locationSuggestionsEl.appendChild(item);
+    });
+  } catch (err) {
+    locationSuggestionsEl.innerHTML = '<div class="suggestion-loading">Search failed, try again</div>';
+  }
 }
 function openAddModal() { resetAddModal(); addModal.classList.remove('hidden'); }
 document.getElementById('closeAddModal').addEventListener('click', () => addModal.classList.add('hidden'));
@@ -457,6 +515,8 @@ function gatherDetails() {
     name: document.getElementById('destName').value.trim(),
     category: document.getElementById('destCategory').value,
     location: document.getElementById('destLocation').value.trim(),
+    lat: pendingLat,
+    lon: pendingLon,
     notes: document.getElementById('destNotes').value.trim(),
     tags: document.getElementById('destTags').value.split(',').map(t => t.trim()).filter(Boolean),
     dateVisited: new Date().toISOString().slice(0, 10),
@@ -575,7 +635,7 @@ function openDetailModal(id, isWant) {
   body.innerHTML = `
     ${photosHtml ? `<div class="detail-photos">${photosHtml}</div>` : ''}
     <div class="detail-row"><label>Category</label>${dest.category}</div>
-    <div class="detail-row"><label>Location</label>${dest.location || '—'}</div>
+    <div class="detail-row"><label>Location</label>${dest.location || '—'}${dest.lat && dest.lon ? ` · <a href="https://www.openstreetmap.org/?mlat=${dest.lat}&mlon=${dest.lon}#map=14/${dest.lat}/${dest.lon}" target="_blank" rel="noopener">View on map</a>` : ''}</div>
     ${!isWant ? `<div class="detail-row"><label>Score</label><span class="score-badge ${scoreClass(dest.score)}" style="display:inline-flex">${formatScore(dest.score)}</span></div>` : ''}
     ${dest.notes ? `<div class="detail-row"><label>Notes</label>${dest.notes}</div>` : ''}
     ${dest.tags && dest.tags.length ? `<div class="detail-row"><label>Tags</label>${dest.tags.join(', ')}</div>` : ''}
