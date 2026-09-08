@@ -199,6 +199,7 @@ label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transf
 .dest-card-name { font-weight: 700; font-size: 15px; color: var(--text-dark); }
 .dest-card-meta { font-size: 12px; color: var(--text-muted); }
 .rank-badge { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+.inline-counts { font-size: 11px; color: var(--text-muted); }
 
 .score-badge {
   min-width: 34px;
@@ -515,6 +516,14 @@ label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transf
 .view-profile-stat { text-align: center; }
 .view-profile-stat span { display: block; font-size: 18px; font-weight: 700; color: var(--green-dark); font-family: 'Playfair Display', serif; }
 .view-profile-stat label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; }
+
+.compare-item { padding: 14px 0; border-bottom: 1px solid #f0ebe0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.compare-item:last-child { border-bottom: none; }
+.compare-item-name { font-weight: 700; font-size: 14px; flex: 1; }
+.compare-item-category { font-weight: 400; font-size: 12px; color: var(--text-muted); display: block; margin-top: 2px; }
+.compare-item-scores { display: flex; gap: 20px; flex-shrink: 0; }
+.compare-score-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.compare-score-col label { font-size: 11px; color: var(--text-muted); text-transform: none; max-width: 70px; text-align: center; }
 
 /* AUTH SCREEN */
 .auth-screen {

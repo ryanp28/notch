@@ -5,7 +5,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   doc, setDoc, getDoc, addDoc, updateDoc, deleteDoc, collection,
-  query, where, onSnapshot, getDocs, serverTimestamp, limit
+  query, where, onSnapshot, getDocs, serverTimestamp, limit, increment
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const SENTIMENT_RANGES = {
@@ -229,6 +229,16 @@ function scoreClass(score) {
 }
 function formatScore(score) { return score.toFixed(1); }
 
+function socialCountsHtml(dest) {
+  const cheers = dest.cheerCount || 0;
+  const comments = dest.commentCount || 0;
+  if (!cheers && !comments) return '';
+  const parts = [];
+  if (cheers) parts.push(`🤍 ${cheers}`);
+  if (comments) parts.push(`💬 ${comments}`);
+  return `<span class="inline-counts">${parts.join(' · ')}</span>`;
+}
+
 // ---------- IMAGE COMPRESSION ----------
 function compressImage(file, maxWidth = 800) {
   return new Promise((resolve, reject) => {
@@ -302,6 +312,7 @@ async function renderFeed() {
       <div class="feed-post-clickable">
         ${photo ? `<div class="feed-photo" style="background-image:url('${photo}')"></div>` : ''}
         <div class="feed-caption"><strong>${escapeHtml(item.name)}</strong> · ${escapeHtml(item.category)} · Score ${formatScore(item.score)}</div>
+        ${socialCountsHtml(item)}
       </div>
     `;
     card.querySelector('.feed-user-row-clickable').addEventListener('click', () => openViewProfile(item.ownerId));
@@ -379,6 +390,7 @@ function renderRankings() {
         </div>
         <span class="dest-card-meta">${escapeHtml(dest.category)} · ${escapeHtml(dest.location || 'No location')}</span>
         <span class="rank-badge">#${idx + 1} in ${escapeHtml(dest.category)}</span>
+        ${socialCountsHtml(dest)}
       </div>
     `;
     card.addEventListener('click', () => openDetailModal(dest.id, false));
@@ -458,6 +470,7 @@ async function renderLeaderboard() {
           <span class="score-badge ${scoreClass(dest.score)}">${formatScore(dest.score)}</span>
         </div>
         <span class="dest-card-meta">${escapeHtml(dest.category)} · by ${escapeHtml(dest.ownerName || 'Someone')}</span>
+        ${socialCountsHtml(dest)}
       </div>
     `;
     card.addEventListener('click', () => openDestinationDetail(dest));
@@ -781,6 +794,7 @@ async function openViewProfile(uid) {
           <span class="score-badge ${scoreClass(d.score)}">${formatScore(d.score)}</span>
         </div>
         <span class="dest-card-meta">${escapeHtml(d.category)}</span>
+        ${socialCountsHtml(d)}
       </div>
     </button>
   `).join('');
@@ -800,7 +814,10 @@ async function openViewProfile(uid) {
       <div class="view-profile-stat"><span>${followersSnap.size}</span><label>Followers</label></div>
       <div class="view-profile-stat"><span>${followingSnap.size}</span><label>Following</label></div>
     </div>
-    <button class="btn ${alreadyFollowing ? 'btn-secondary' : 'btn-primary'}" id="viewProfileFollowBtn" data-following="${alreadyFollowing}" style="width:100%; margin-bottom:16px;">${alreadyFollowing ? 'Following' : 'Follow'}</button>
+    <div class="modal-actions" style="flex-direction:row; margin-bottom:16px;">
+      <button class="btn ${alreadyFollowing ? 'btn-secondary' : 'btn-primary'}" id="viewProfileFollowBtn" data-following="${alreadyFollowing}" style="flex:1;">${alreadyFollowing ? 'Following' : 'Follow'}</button>
+      <button class="btn btn-secondary" id="viewProfileCompareBtn" style="flex:1;">Compare</button>
+    </div>
     <h3>Top Destinations</h3>
     <div class="card-list">${topDestsHtml || '<p class="empty-state">No ranked destinations yet.</p>'}</div>
   `;
@@ -808,8 +825,11 @@ async function openViewProfile(uid) {
   document.getElementById('viewProfileFollowBtn').addEventListener('click', async (ev) => {
     await toggleFollow(uid, ev.target);
     ev.target.className = ev.target.dataset.following === 'true' ? 'btn btn-secondary' : 'btn btn-primary';
-    ev.target.style.width = '100%';
-    ev.target.style.marginBottom = '16px';
+  });
+
+  document.getElementById('viewProfileCompareBtn').addEventListener('click', () => {
+    viewProfileModal.classList.add('hidden');
+    openCompareModal(uid, data.name || 'them', ranked);
   });
 
   document.querySelectorAll('.view-profile-dest-card').forEach(card => {
@@ -821,6 +841,41 @@ async function openViewProfile(uid) {
 
   viewProfileModal.classList.remove('hidden');
 }
+
+// ---------- COMPARE WITH A FRIEND ----------
+function destMatchKey(dest) {
+  return `${dest.name.trim().toLowerCase()}|${dest.category}`;
+}
+
+function openCompareModal(friendUid, friendName, friendRanked) {
+  const myMap = new Map(state.destinations.map(d => [destMatchKey(d), d]));
+  const shared = [];
+  friendRanked.forEach(theirs => {
+    const mine = myMap.get(destMatchKey(theirs));
+    if (mine) shared.push({ mine, theirs });
+  });
+  shared.sort((a, b) => b.mine.score - a.mine.score);
+
+  document.getElementById('compareModalTitle').textContent = `You vs ${friendName}`;
+  const body = document.getElementById('compareBody');
+  if (shared.length === 0) {
+    body.innerHTML = `<p class="empty-state">You haven't both ranked any of the same places yet.</p>`;
+  } else {
+    body.innerHTML = shared.map(({ mine, theirs }) => `
+      <div class="compare-item">
+        <div class="compare-item-name">${escapeHtml(mine.name)}<span class="compare-item-category">${escapeHtml(mine.category)}</span></div>
+        <div class="compare-item-scores">
+          <div class="compare-score-col"><span class="score-badge ${scoreClass(mine.score)}">${formatScore(mine.score)}</span><label>You</label></div>
+          <div class="compare-score-col"><span class="score-badge ${scoreClass(theirs.score)}">${formatScore(theirs.score)}</span><label>${escapeHtml(friendName)}</label></div>
+        </div>
+      </div>
+    `).join('');
+  }
+  document.getElementById('compareModal').classList.remove('hidden');
+}
+document.getElementById('closeCompareModal').addEventListener('click', () => {
+  document.getElementById('compareModal').classList.add('hidden');
+});
 
 // ---------- ADD DESTINATION MODAL FLOW ----------
 const addModal = document.getElementById('addModal');
@@ -1162,9 +1217,11 @@ async function attachDetailSocialControls(dest) {
     if (currentlyCheered) {
       await deleteDoc(reactionRef);
       cheerBtn.classList.remove('cheered');
+      updateDoc(doc(db, 'destinations', destId), { cheerCount: increment(-1) });
     } else {
       await setDoc(reactionRef, { destinationId: destId, userId: currentUser.uid, createdAt: serverTimestamp() });
       cheerBtn.classList.add('cheered');
+      updateDoc(doc(db, 'destinations', destId), { cheerCount: increment(1) });
       if (dest.ownerId !== currentUser.uid) {
         addDoc(collection(db, 'notifications'), {
           recipientId: dest.ownerId,
@@ -1204,6 +1261,7 @@ async function attachDetailSocialControls(dest) {
       text,
       createdAt: serverTimestamp()
     });
+    updateDoc(doc(db, 'destinations', destId), { commentCount: increment(1) });
     if (dest.ownerId !== currentUser.uid) {
       addDoc(collection(db, 'notifications'), {
         recipientId: dest.ownerId,
