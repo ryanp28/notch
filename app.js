@@ -183,9 +183,10 @@ async function renderFeed() {
     return;
   }
 
-  items.forEach(item => {
+  items.forEach((item, idx) => {
     const card = document.createElement('div');
     card.className = 'feed-card';
+    card.style.setProperty('--i', idx);
     const initials = (item.ownerName || '?').charAt(0).toUpperCase();
     const photo = item.photos && item.photos[0] ? item.photos[0] : '';
     card.innerHTML = `
@@ -236,6 +237,7 @@ function renderRankings() {
   items.forEach((dest, idx) => {
     const card = document.createElement('button');
     card.className = 'dest-card';
+    card.style.setProperty('--i', idx);
     const cover = dest.photos && dest.photos[0] ? `style="background-image:url('${dest.photos[0]}')"` : '';
     card.innerHTML = `
       <div class="dest-card-photo" ${cover}>${dest.photos && dest.photos[0] ? '' : '📍'}</div>
@@ -260,9 +262,10 @@ function renderWantList() {
   const empty = document.getElementById('wantEmpty');
   list.innerHTML = '';
   empty.classList.toggle('hidden', state.wantToVisit.length > 0);
-  state.wantToVisit.forEach(dest => {
+  state.wantToVisit.forEach((dest, idx) => {
     const card = document.createElement('button');
     card.className = 'dest-card';
+    card.style.setProperty('--i', idx);
     const cover = dest.photos && dest.photos[0] ? `style="background-image:url('${dest.photos[0]}')"` : '';
     card.innerHTML = `
       <div class="dest-card-photo" ${cover}>${dest.photos && dest.photos[0] ? '' : '🔖'}</div>

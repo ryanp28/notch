@@ -260,7 +260,6 @@ label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transf
   justify-content: center;
   z-index: 100;
 }
-.modal-overlay.hidden { display: none; }
 .modal {
   background: var(--cream);
   width: 100%;
@@ -400,3 +399,162 @@ label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transf
 .detail-row { margin-bottom: 10px; font-size: 14px; }
 .detail-row label { display: block; }
 .detail-actions { display: flex; gap: 10px; margin-top: 16px; }
+
+/* ============ ANIMATIONS ============ */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes popIn {
+  0% { transform: scale(0); }
+  70% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+@keyframes floatPin {
+  0%, 100% { transform: rotate(-45deg) translateY(0); }
+  50% { transform: rotate(-45deg) translateY(-5px); }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(24px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.tab-panel.active { animation: fadeIn 0.35s ease; }
+
+.score-badge { animation: popIn 0.35s cubic-bezier(.34,1.56,.64,1); }
+
+.auth-logo .pin { animation: floatPin 2.6s ease-in-out infinite; }
+
+.dest-card, .feed-card {
+  animation: fadeIn 0.4s ease backwards;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+
+.btn { transition: transform 0.15s ease, filter 0.15s ease; }
+.btn:hover { filter: brightness(1.06); }
+.btn:active { transform: scale(0.97); }
+
+.chip { transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease; }
+.chip:active { transform: scale(0.95); }
+
+.sentiment-btn { transition: transform 0.15s ease, border-color 0.15s ease; }
+.sentiment-btn:hover { transform: translateY(-3px); }
+
+.compare-card { transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease; }
+.compare-card:hover { transform: translateY(-3px); box-shadow: 0 8px 18px rgba(27,67,50,0.12); }
+
+.nav-btn { transition: color 0.15s ease, transform 0.1s ease; }
+.nav-btn:active { transform: scale(0.92); }
+.nav-add { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.nav-add:hover { transform: scale(1.06); }
+.nav-add:active { transform: scale(0.94); }
+
+.dest-card { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.dest-card:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(27,67,50,0.14); }
+
+.header-icon-btn { transition: transform 0.15s ease; }
+.header-icon-btn:hover { transform: scale(1.1); }
+
+/* Animate modal in/out instead of hard show/hide */
+.modal-overlay {
+  opacity: 1;
+  transition: opacity 0.25s ease;
+}
+.modal-overlay.hidden {
+  display: flex !important;
+  opacity: 0;
+  pointer-events: none;
+}
+.modal {
+  transform: translateY(0);
+  transition: transform 0.3s cubic-bezier(.2,.8,.2,1);
+}
+.modal-overlay.hidden .modal {
+  transform: translateY(40px);
+}
+
+/* ============ DESKTOP LAYOUT ============ */
+@media (min-width: 900px) {
+  body { padding: 30px 20px; align-items: flex-start; }
+
+  #mainApp {
+    max-width: 1100px;
+    min-height: calc(100vh - 60px);
+    display: grid;
+    grid-template-columns: 230px 1fr;
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      "header header"
+      "nav content";
+    box-shadow: 0 10px 50px rgba(27,67,50,0.12);
+    border-radius: 20px;
+    overflow: hidden;
+  }
+
+  #mainApp .app-header { grid-area: header; padding: 22px 36px; }
+  #mainApp .logo { font-size: 30px; }
+
+  #mainApp .bottom-nav {
+    grid-area: nav;
+    position: static;
+    left: auto; bottom: auto; transform: none;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 6px;
+    width: 100%;
+    max-width: none;
+    padding: 28px 16px;
+    border-top: none;
+    border-right: 1px solid #e5ded0;
+  }
+  #mainApp .nav-btn {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    font-size: 14px;
+    padding: 11px 14px;
+    border-radius: 10px;
+  }
+  #mainApp .nav-btn span { font-size: 18px; }
+  #mainApp .nav-btn.active { background: var(--cream); }
+  #mainApp .nav-add {
+    width: 100%;
+    height: auto;
+    border-radius: 10px;
+    margin-top: 6px;
+    padding: 11px 14px;
+    box-shadow: none;
+    justify-content: flex-start;
+  }
+  #mainApp .nav-add span { font-size: 18px; }
+  #mainApp .nav-add::after {
+    content: "Add Destination";
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  #mainApp .tab-panel {
+    grid-area: content;
+    padding: 32px 44px 60px;
+    max-width: 980px;
+    overflow-y: auto;
+  }
+
+  #mainApp #rankingsList,
+  #mainApp #wantList,
+  #mainApp #feedList {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+
+  .modal-overlay { align-items: center; }
+  .modal {
+    border-radius: 20px;
+    max-width: 440px;
+  }
+  .modal-overlay.hidden .modal {
+    transform: translateY(20px) scale(0.97);
+  }
+}
