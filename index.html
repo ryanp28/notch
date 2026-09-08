@@ -92,6 +92,14 @@
   <!-- ADD TAB (opens modal) -->
   <main id="tab-add" class="tab-panel"></main>
 
+  <!-- LEADERBOARD TAB -->
+  <main id="tab-leaderboard" class="tab-panel">
+    <h2>Leaderboard</h2>
+    <p class="hint-text">Top-ranked destinations across everyone on NOTCH.</p>
+    <div id="leaderboardList" class="card-list"></div>
+    <p id="leaderboardEmpty" class="empty-state hidden">Nobody has ranked anything yet.</p>
+  </main>
+
   <!-- WANT TO VISIT TAB -->
   <main id="tab-want" class="tab-panel">
     <h2>Want to Visit</h2>
@@ -147,6 +155,7 @@
   <nav class="bottom-nav">
     <button class="nav-btn active" data-tab="feed"><span>📰</span>Feed</button>
     <button class="nav-btn" data-tab="rankings"><span>🏆</span>Rankings</button>
+    <button class="nav-btn" data-tab="leaderboard"><span>🌍</span>Leaders</button>
     <button class="nav-btn nav-add" id="openAddBtn"><span>+</span></button>
     <button class="nav-btn" data-tab="want"><span>🔖</span>Want</button>
     <button class="nav-btn" data-tab="profile"><span>👤</span>Profile</button>

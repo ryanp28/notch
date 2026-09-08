@@ -130,6 +130,7 @@ function switchTab(tabName) {
   if (tabName === 'want') renderWantList();
   if (tabName === 'profile') renderProfile();
   if (tabName === 'feed') renderFeed();
+  if (tabName === 'leaderboard') renderLeaderboard();
 }
 tabButtons.forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
 document.getElementById('openAddBtn').addEventListener('click', openAddModal);
@@ -213,73 +214,14 @@ async function renderFeed() {
           <div class="feed-action">ranked a new destination</div>
         </div>
       </div>
-      ${photo ? `<div class="feed-photo" style="background-image:url('${photo}')"></div>` : ''}
-      <div class="feed-caption"><strong>${escapeHtml(item.name)}</strong> · ${escapeHtml(item.category)} · Score ${formatScore(item.score)}</div>
-      <div class="feed-social-row">
-        <button class="cheer-btn" data-id="${item.id}">🤍 <span class="cheer-count">0</span></button>
-        <span class="comment-count-label" data-id="${item.id}">0 comments</span>
-      </div>
-      <div class="comment-list" data-id="${item.id}"></div>
-      <div class="comment-input-row">
-        <input class="text-input comment-input" data-id="${item.id}" placeholder="Add a comment..." />
+      <div class="feed-post-clickable">
+        ${photo ? `<div class="feed-photo" style="background-image:url('${photo}')"></div>` : ''}
+        <div class="feed-caption"><strong>${escapeHtml(item.name)}</strong> · ${escapeHtml(item.category)} · Score ${formatScore(item.score)}</div>
       </div>
     `;
     card.querySelector('.feed-user-row-clickable').addEventListener('click', () => openViewProfile(item.ownerId));
+    card.querySelector('.feed-post-clickable').addEventListener('click', () => openDestinationDetail(item));
     list.appendChild(card);
-    attachSocialControls(card, item.id);
-  });
-}
-
-// ---------- FEED: REACTIONS & COMMENTS ----------
-async function attachSocialControls(card, destId) {
-  const cheerBtn = card.querySelector('.cheer-btn');
-  const commentListEl = card.querySelector('.comment-list');
-  const commentCountLabel = card.querySelector('.comment-count-label');
-  const commentInput = card.querySelector('.comment-input');
-
-  const reactionsSnap = await getDocs(query(collection(db, 'reactions'), where('destinationId', '==', destId)));
-  const myReactionId = `${destId}_${currentUser.uid}`;
-  const iAlreadyCheered = reactionsSnap.docs.some(d => d.id === myReactionId);
-  cheerBtn.classList.toggle('cheered', iAlreadyCheered);
-  cheerBtn.innerHTML = `${iAlreadyCheered ? '❤️' : '🤍'} <span class="cheer-count">${reactionsSnap.size}</span>`;
-
-  cheerBtn.addEventListener('click', async () => {
-    const reactionRef = doc(db, 'reactions', myReactionId);
-    const currentlyCheered = cheerBtn.classList.contains('cheered');
-    if (currentlyCheered) {
-      await deleteDoc(reactionRef);
-      cheerBtn.classList.remove('cheered');
-    } else {
-      await setDoc(reactionRef, { destinationId: destId, userId: currentUser.uid, createdAt: serverTimestamp() });
-      cheerBtn.classList.add('cheered');
-    }
-    const freshSnap = await getDocs(query(collection(db, 'reactions'), where('destinationId', '==', destId)));
-    cheerBtn.innerHTML = `${cheerBtn.classList.contains('cheered') ? '❤️' : '🤍'} <span class="cheer-count">${freshSnap.size}</span>`;
-  });
-
-  async function loadComments() {
-    const commentsSnap = await getDocs(query(collection(db, 'comments'), where('destinationId', '==', destId)));
-    const comments = commentsSnap.docs.map(d => d.data()).sort((a, b) => (a.createdAt?.toMillis?.() || 0) - (b.createdAt?.toMillis?.() || 0));
-    commentCountLabel.textContent = comments.length === 1 ? '1 comment' : `${comments.length} comments`;
-    commentListEl.innerHTML = comments.map(c => `
-      <div class="comment-item"><strong>${escapeHtml(c.authorName)}</strong> ${escapeHtml(c.text)}</div>
-    `).join('');
-  }
-  loadComments();
-
-  commentInput.addEventListener('keydown', async (e) => {
-    if (e.key !== 'Enter') return;
-    const text = commentInput.value.trim();
-    if (!text) return;
-    commentInput.value = '';
-    await addDoc(collection(db, 'comments'), {
-      destinationId: destId,
-      authorId: currentUser.uid,
-      authorName: state.profile.name || currentUser.email,
-      text,
-      createdAt: serverTimestamp()
-    });
-    loadComments();
   });
 }
 
@@ -391,10 +333,8 @@ function renderMapView(items) {
       fillColor: scoreColor(dest.score),
       fillOpacity: 1
     });
-    marker.bindPopup(`
-      <span class="map-popup-score" style="background:${scoreColor(dest.score)}">${formatScore(dest.score)}</span>
-      <strong>${escapeHtml(dest.name)}</strong><br/>${escapeHtml(dest.category)}
-    `);
+    marker.bindTooltip(`${escapeHtml(dest.name)} · ${formatScore(dest.score)}`);
+    marker.on('click', () => openDestinationDetail(dest));
     marker.addTo(leafletMarkersLayer);
   });
 
@@ -403,6 +343,41 @@ function renderMapView(items) {
     leafletMap.invalidateSize();
     leafletMap.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
   }, 50);
+}
+
+// ---------- LEADERBOARD ----------
+async function renderLeaderboard() {
+  const list = document.getElementById('leaderboardList');
+  const empty = document.getElementById('leaderboardEmpty');
+  list.innerHTML = '<p class="hint-text">Loading...</p>';
+
+  const snap = await getDocs(query(collection(db, 'destinations'), where('status', '==', 'ranked'), limit(500)));
+  const items = snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 50);
+
+  list.innerHTML = '';
+  empty.classList.toggle('hidden', items.length > 0);
+
+  items.forEach((dest, idx) => {
+    const card = document.createElement('button');
+    card.className = 'dest-card';
+    card.style.setProperty('--i', idx);
+    const cover = dest.photos && dest.photos[0] ? `style="background-image:url('${dest.photos[0]}')"` : '';
+    card.innerHTML = `
+      <div class="dest-card-photo" ${cover}>${dest.photos && dest.photos[0] ? '' : '📍'}</div>
+      <div class="dest-card-body">
+        <div class="dest-card-top-row">
+          <span class="dest-card-name">#${idx + 1} ${escapeHtml(dest.name)}</span>
+          <span class="score-badge ${scoreClass(dest.score)}">${formatScore(dest.score)}</span>
+        </div>
+        <span class="dest-card-meta">${escapeHtml(dest.category)} · by ${escapeHtml(dest.ownerName || 'Someone')}</span>
+      </div>
+    `;
+    card.addEventListener('click', () => openDestinationDetail(dest));
+    list.appendChild(card);
+  });
 }
 
 // ---------- RENDER: WANT TO VISIT ----------
@@ -689,7 +664,7 @@ async function openViewProfile(uid) {
   const data = userDoc.data();
 
   const destsSnap = await getDocs(query(collection(db, 'destinations'), where('ownerId', '==', uid)));
-  const ranked = destsSnap.docs.map(d => d.data()).filter(d => d.status === 'ranked').sort((a, b) => b.score - a.score);
+  const ranked = destsSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.status === 'ranked').sort((a, b) => b.score - a.score);
   const avg = ranked.length ? (ranked.reduce((s, d) => s + d.score, 0) / ranked.length) : 0;
 
   const followingSnap = await getDocs(query(collection(db, 'follows'), where('followerId', '==', uid)));
@@ -701,8 +676,9 @@ async function openViewProfile(uid) {
     ? `<img src="${data.photoURL}" class="profile-avatar" />`
     : `<div class="profile-avatar profile-avatar-fallback">${escapeHtml((data.name || '?').charAt(0).toUpperCase())}</div>`;
 
-  const topDestsHtml = ranked.slice(0, 8).map(d => `
-    <div class="dest-card" style="cursor:default;">
+  const topDests = ranked.slice(0, 8);
+  const topDestsHtml = topDests.map((d, i) => `
+    <button class="dest-card view-profile-dest-card" data-idx="${i}">
       <div class="dest-card-photo" ${d.photos && d.photos[0] ? `style="background-image:url('${d.photos[0]}')"` : ''}>${d.photos && d.photos[0] ? '' : '📍'}</div>
       <div class="dest-card-body">
         <div class="dest-card-top-row">
@@ -711,7 +687,7 @@ async function openViewProfile(uid) {
         </div>
         <span class="dest-card-meta">${escapeHtml(d.category)}</span>
       </div>
-    </div>
+    </button>
   `).join('');
 
   document.getElementById('viewProfileBody').innerHTML = `
@@ -739,6 +715,13 @@ async function openViewProfile(uid) {
     ev.target.className = ev.target.dataset.following === 'true' ? 'btn btn-secondary' : 'btn btn-primary';
     ev.target.style.width = '100%';
     ev.target.style.marginBottom = '16px';
+  });
+
+  document.querySelectorAll('.view-profile-dest-card').forEach(card => {
+    card.addEventListener('click', () => {
+      viewProfileModal.classList.add('hidden');
+      openDestinationDetail(topDests[Number(card.dataset.idx)]);
+    });
   });
 
   viewProfileModal.classList.remove('hidden');
@@ -801,6 +784,19 @@ document.addEventListener('click', (e) => {
     locationSuggestionsEl.classList.add('hidden');
   }
 });
+
+async function geocodeLocation(text) {
+  if (!text) return null;
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(text)}&limit=1`;
+    const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+    const results = await res.json();
+    if (results.length) return { lat: parseFloat(results[0].lat), lon: parseFloat(results[0].lon) };
+  } catch (err) {
+    // ignore, caller keeps existing coordinates (if any)
+  }
+  return null;
+}
 
 async function fetchLocationSuggestions(term) {
   try {
@@ -866,13 +862,21 @@ function gatherDetails() {
 document.getElementById('saveWantBtn').addEventListener('click', async () => {
   const details = gatherDetails();
   if (!details.name) { alert('Please enter a name.'); return; }
+  if (!details.lat && details.location) {
+    const geo = await geocodeLocation(details.location);
+    if (geo) { details.lat = geo.lat; details.lon = geo.lon; }
+  }
   await addDoc(collection(db, 'destinations'), { ...details, status: 'want', createdAt: serverTimestamp() });
   addModal.classList.add('hidden');
 });
 
-document.getElementById('startRankingBtn').addEventListener('click', () => {
+document.getElementById('startRankingBtn').addEventListener('click', async () => {
   const details = gatherDetails();
   if (!details.name) { alert('Please enter a name.'); return; }
+  if (!details.lat && details.location) {
+    const geo = await geocodeLocation(details.location);
+    if (geo) { details.lat = geo.lat; details.lon = geo.lon; }
+  }
   pendingDest = details;
   stepDetails.classList.add('hidden');
   stepSentiment.classList.remove('hidden');
@@ -966,10 +970,17 @@ function openDetailModal(id, isWant) {
   const list = isWant ? state.wantToVisit : state.destinations;
   const dest = list.find(d => d.id === id);
   if (!dest) return;
+  openDestinationDetail(dest);
+}
+
+function openDestinationDetail(dest) {
+  const isOwn = dest.ownerId === currentUser.uid;
+  const isWant = dest.status === 'want';
   document.getElementById('detailName').textContent = dest.name;
   const photosHtml = (dest.photos || []).map(p => `<img src="${p}" />`).join('');
   const body = document.getElementById('detailBody');
   body.innerHTML = `
+    ${!isOwn ? `<button class="detail-owner-row" id="detailOwnerRow">Ranked by <strong>${escapeHtml(dest.ownerName || 'Someone')}</strong></button>` : ''}
     ${photosHtml ? `<div class="detail-photos">${photosHtml}</div>` : ''}
     <div class="detail-row"><label>Category</label>${escapeHtml(dest.category)}</div>
     <div class="detail-row"><label>Location</label>${escapeHtml(dest.location || '—')}${dest.lat && dest.lon ? ` · <a href="https://www.openstreetmap.org/?mlat=${dest.lat}&mlon=${dest.lon}#map=14/${dest.lat}/${dest.lon}" target="_blank" rel="noopener">View on map</a>` : ''}</div>
@@ -977,38 +988,114 @@ function openDetailModal(id, isWant) {
     ${dest.notes ? `<div class="detail-row"><label>Notes</label>${escapeHtml(dest.notes)}</div>` : ''}
     ${dest.tags && dest.tags.length ? `<div class="detail-row"><label>Tags</label>${escapeHtml(dest.tags.join(', '))}</div>` : ''}
     <div class="detail-row"><label>Date</label>${dest.dateVisited}</div>
+    ${isOwn ? `
     <div class="detail-actions">
       ${isWant ? `<button class="btn btn-primary" id="markVisitedBtn">Mark as Visited</button>` : ''}
       <button class="btn btn-secondary" id="editDestBtn">Edit</button>
       <button class="btn btn-danger" id="deleteBtn">Delete</button>
-    </div>
+    </div>` : ''}
+    ${!isWant ? `
+    <div class="detail-social">
+      <div class="feed-social-row">
+        <button class="cheer-btn" id="detailCheerBtn">🤍 <span class="cheer-count">0</span></button>
+        <span class="comment-count-label" id="detailCommentCount">0 comments</span>
+      </div>
+      <div class="comment-list" id="detailCommentList"></div>
+      <div class="comment-input-row">
+        <input class="text-input comment-input" id="detailCommentInput" placeholder="Add a comment..." />
+      </div>
+    </div>` : ''}
   `;
 
-  document.getElementById('deleteBtn').addEventListener('click', async () => {
-    if (!confirm(`Delete ${dest.name}?`)) return;
-    await deleteDoc(doc(db, 'destinations', id));
-    detailModal.classList.add('hidden');
-  });
-
-  document.getElementById('editDestBtn').addEventListener('click', () => {
-    detailModal.classList.add('hidden');
-    openEditDestModal(dest);
-  });
-
-  if (isWant) {
-    document.getElementById('markVisitedBtn').addEventListener('click', () => {
+  if (isOwn) {
+    document.getElementById('deleteBtn').addEventListener('click', async () => {
+      if (!confirm(`Delete ${dest.name}?`)) return;
+      await deleteDoc(doc(db, 'destinations', dest.id));
       detailModal.classList.add('hidden');
-      pendingDest = { ...dest };
-      pendingPhotos = dest.photos || [];
-      editingExistingId = dest.id;
-      addModal.classList.remove('hidden');
-      stepDetails.classList.add('hidden');
-      stepSentiment.classList.remove('hidden');
-      document.getElementById('addModalTitle').textContent = 'How was it?';
+    });
+
+    document.getElementById('editDestBtn').addEventListener('click', () => {
+      detailModal.classList.add('hidden');
+      openEditDestModal(dest);
+    });
+
+    if (isWant) {
+      document.getElementById('markVisitedBtn').addEventListener('click', () => {
+        detailModal.classList.add('hidden');
+        pendingDest = { ...dest };
+        pendingPhotos = dest.photos || [];
+        editingExistingId = dest.id;
+        addModal.classList.remove('hidden');
+        stepDetails.classList.add('hidden');
+        stepSentiment.classList.remove('hidden');
+        document.getElementById('addModalTitle').textContent = 'How was it?';
+      });
+    }
+  } else {
+    document.getElementById('detailOwnerRow').addEventListener('click', () => {
+      detailModal.classList.add('hidden');
+      openViewProfile(dest.ownerId);
     });
   }
 
+  if (!isWant) {
+    attachDetailSocialControls(dest.id);
+  }
+
   detailModal.classList.remove('hidden');
+}
+
+// ---------- DETAIL MODAL: REACTIONS & COMMENTS ----------
+async function attachDetailSocialControls(destId) {
+  const cheerBtn = document.getElementById('detailCheerBtn');
+  const commentListEl = document.getElementById('detailCommentList');
+  const commentCountLabel = document.getElementById('detailCommentCount');
+  const commentInput = document.getElementById('detailCommentInput');
+
+  const reactionsSnap = await getDocs(query(collection(db, 'reactions'), where('destinationId', '==', destId)));
+  const myReactionId = `${destId}_${currentUser.uid}`;
+  const iAlreadyCheered = reactionsSnap.docs.some(d => d.id === myReactionId);
+  cheerBtn.classList.toggle('cheered', iAlreadyCheered);
+  cheerBtn.innerHTML = `${iAlreadyCheered ? '❤️' : '🤍'} <span class="cheer-count">${reactionsSnap.size}</span>`;
+
+  cheerBtn.addEventListener('click', async () => {
+    const reactionRef = doc(db, 'reactions', myReactionId);
+    const currentlyCheered = cheerBtn.classList.contains('cheered');
+    if (currentlyCheered) {
+      await deleteDoc(reactionRef);
+      cheerBtn.classList.remove('cheered');
+    } else {
+      await setDoc(reactionRef, { destinationId: destId, userId: currentUser.uid, createdAt: serverTimestamp() });
+      cheerBtn.classList.add('cheered');
+    }
+    const freshSnap = await getDocs(query(collection(db, 'reactions'), where('destinationId', '==', destId)));
+    cheerBtn.innerHTML = `${cheerBtn.classList.contains('cheered') ? '❤️' : '🤍'} <span class="cheer-count">${freshSnap.size}</span>`;
+  });
+
+  async function loadComments() {
+    const commentsSnap = await getDocs(query(collection(db, 'comments'), where('destinationId', '==', destId)));
+    const comments = commentsSnap.docs.map(d => d.data()).sort((a, b) => (a.createdAt?.toMillis?.() || 0) - (b.createdAt?.toMillis?.() || 0));
+    commentCountLabel.textContent = comments.length === 1 ? '1 comment' : `${comments.length} comments`;
+    commentListEl.innerHTML = comments.map(c => `
+      <div class="comment-item"><strong>${escapeHtml(c.authorName)}</strong> ${escapeHtml(c.text)}</div>
+    `).join('');
+  }
+  loadComments();
+
+  commentInput.addEventListener('keydown', async (e) => {
+    if (e.key !== 'Enter') return;
+    const text = commentInput.value.trim();
+    if (!text) return;
+    commentInput.value = '';
+    await addDoc(collection(db, 'comments'), {
+      destinationId: destId,
+      authorId: currentUser.uid,
+      authorName: state.profile.name || currentUser.email,
+      text,
+      createdAt: serverTimestamp()
+    });
+    loadComments();
+  });
 }
 
 // ---------- EDIT DESTINATION MODAL ----------
@@ -1016,9 +1103,16 @@ const editDestModal = document.getElementById('editDestModal');
 let editDestId = null;
 let editDestPhotos = [];
 
+let editDestOriginalLocation = '';
+let editDestOriginalLat = null;
+let editDestOriginalLon = null;
+
 function openEditDestModal(dest) {
   editDestId = dest.id;
   editDestPhotos = [...(dest.photos || [])];
+  editDestOriginalLocation = dest.location || '';
+  editDestOriginalLat = typeof dest.lat === 'number' ? dest.lat : null;
+  editDestOriginalLon = typeof dest.lon === 'number' ? dest.lon : null;
   document.getElementById('editDestName').value = dest.name;
   document.getElementById('editDestLocation').value = dest.location || '';
   document.getElementById('editDestNotes').value = dest.notes || '';
@@ -1057,12 +1151,24 @@ document.getElementById('editDestPhotos').addEventListener('change', async (e) =
 document.getElementById('saveEditDestBtn').addEventListener('click', async () => {
   const name = document.getElementById('editDestName').value.trim();
   if (!name) { alert('Please enter a name.'); return; }
-  await updateDoc(doc(db, 'destinations', editDestId), {
+  const location = document.getElementById('editDestLocation').value.trim();
+
+  const updateData = {
     name,
-    location: document.getElementById('editDestLocation').value.trim(),
+    location,
     notes: document.getElementById('editDestNotes').value.trim(),
     tags: document.getElementById('editDestTags').value.split(',').map(t => t.trim()).filter(Boolean),
     photos: editDestPhotos
-  });
+  };
+
+  if (location && location !== editDestOriginalLocation) {
+    const geo = await geocodeLocation(location);
+    if (geo) { updateData.lat = geo.lat; updateData.lon = geo.lon; }
+  } else if (editDestOriginalLat !== null) {
+    updateData.lat = editDestOriginalLat;
+    updateData.lon = editDestOriginalLon;
+  }
+
+  await updateDoc(doc(db, 'destinations', editDestId), updateData);
   editDestModal.classList.add('hidden');
 });

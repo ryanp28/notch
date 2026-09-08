@@ -223,6 +223,7 @@ label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transf
 .feed-user-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .feed-user-row-clickable { cursor: pointer; width: fit-content; }
 .feed-user-row-clickable:hover .feed-username { text-decoration: underline; }
+.feed-post-clickable { cursor: pointer; }
 .feed-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--green-dark); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
 .feed-username { font-weight: 700; font-size: 13px; }
 .feed-action { font-size: 12px; color: var(--text-muted); }
@@ -541,6 +542,22 @@ label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transf
 .detail-row { margin-bottom: 10px; font-size: 14px; }
 .detail-row label { display: block; }
 .detail-actions { display: flex; gap: 10px; margin-top: 16px; }
+.detail-owner-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--cream);
+  border: none;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text-dark);
+  cursor: pointer;
+  margin-bottom: 14px;
+  font-family: inherit;
+}
+.detail-owner-row:hover { background: var(--gold-light); }
+.detail-social { margin-top: 18px; padding-top: 14px; border-top: 1px solid #f0ebe0; }
 
 /* ============ ANIMATIONS ============ */
 @keyframes fadeIn {
