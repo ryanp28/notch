@@ -15,10 +15,23 @@ const SENTIMENT_RANGES = {
 };
 const CATEGORIES = ['City', 'Landmark', 'Nature', 'Food & Drink', 'Lodging', 'Activity'];
 const MAX_PHOTOS = 3;
+const LINK_PLATFORMS = [
+  { key: 'instagram', label: 'Instagram', urlPrefix: 'https://instagram.com/' },
+  { key: 'tiktok', label: 'TikTok', urlPrefix: 'https://tiktok.com/@' },
+  { key: 'twitter', label: 'X', urlPrefix: 'https://x.com/' },
+  { key: 'website', label: 'Website', urlPrefix: '' }
+];
+
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
 
 let currentUser = null;
 let unsubscribeDestinations = null;
-let state = { destinations: [], wantToVisit: [], profile: { name: '', followers: 0, following: 0 } };
+const emptyProfile = () => ({ name: '', bio: '', photoURL: '', links: {}, followers: 0, following: 0 });
+let state = { destinations: [], wantToVisit: [], profile: emptyProfile() };
 
 // ---------- AUTH SCREEN ----------
 document.querySelectorAll('.auth-tab').forEach(btn => {
@@ -75,7 +88,11 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('authScreen').classList.add('hidden');
     document.getElementById('mainApp').classList.remove('hidden');
     const userDoc = await getDoc(doc(db, 'users', user.uid));
-    state.profile.name = userDoc.exists() ? userDoc.data().name : (user.displayName || '');
+    const data = userDoc.exists() ? userDoc.data() : {};
+    state.profile.name = data.name || user.displayName || '';
+    state.profile.bio = data.bio || '';
+    state.profile.photoURL = data.photoURL || '';
+    state.profile.links = data.links || {};
     attachDestinationsListener();
     refreshFollowCounts();
     switchTab('feed');
@@ -83,7 +100,7 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('authScreen').classList.remove('hidden');
     document.getElementById('mainApp').classList.add('hidden');
     if (unsubscribeDestinations) { unsubscribeDestinations(); unsubscribeDestinations = null; }
-    state = { destinations: [], wantToVisit: [], profile: { name: '', followers: 0, following: 0 } };
+    state = { destinations: [], wantToVisit: [], profile: emptyProfile() };
   }
 });
 
@@ -127,13 +144,12 @@ function scoreClass(score) {
 function formatScore(score) { return score.toFixed(1); }
 
 // ---------- IMAGE COMPRESSION ----------
-function compressImage(file) {
+function compressImage(file, maxWidth = 800) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => {
-        const maxWidth = 800;
         const scale = Math.min(1, maxWidth / img.width);
         const canvas = document.createElement('canvas');
         canvas.width = img.width * scale;
@@ -190,16 +206,17 @@ async function renderFeed() {
     const initials = (item.ownerName || '?').charAt(0).toUpperCase();
     const photo = item.photos && item.photos[0] ? item.photos[0] : '';
     card.innerHTML = `
-      <div class="feed-user-row">
-        <div class="feed-avatar">${initials}</div>
+      <div class="feed-user-row feed-user-row-clickable">
+        <div class="feed-avatar">${escapeHtml(initials)}</div>
         <div>
-          <div class="feed-username">${item.ownerName || 'Someone'}</div>
+          <div class="feed-username">${escapeHtml(item.ownerName || 'Someone')}</div>
           <div class="feed-action">ranked a new destination</div>
         </div>
       </div>
       ${photo ? `<div class="feed-photo" style="background-image:url('${photo}')"></div>` : ''}
-      <div class="feed-caption"><strong>${item.name}</strong> · ${item.category} · Score ${formatScore(item.score)}</div>
+      <div class="feed-caption"><strong>${escapeHtml(item.name)}</strong> · ${escapeHtml(item.category)} · Score ${formatScore(item.score)}</div>
     `;
+    card.querySelector('.feed-user-row-clickable').addEventListener('click', () => openViewProfile(item.ownerId));
     list.appendChild(card);
   });
 }
@@ -243,11 +260,11 @@ function renderRankings() {
       <div class="dest-card-photo" ${cover}>${dest.photos && dest.photos[0] ? '' : '📍'}</div>
       <div class="dest-card-body">
         <div class="dest-card-top-row">
-          <span class="dest-card-name">${dest.name}</span>
+          <span class="dest-card-name">${escapeHtml(dest.name)}</span>
           <span class="score-badge ${scoreClass(dest.score)}">${formatScore(dest.score)}</span>
         </div>
-        <span class="dest-card-meta">${dest.category} · ${dest.location || 'No location'}</span>
-        <span class="rank-badge">#${idx + 1} in ${dest.category}</span>
+        <span class="dest-card-meta">${escapeHtml(dest.category)} · ${escapeHtml(dest.location || 'No location')}</span>
+        <span class="rank-badge">#${idx + 1} in ${escapeHtml(dest.category)}</span>
       </div>
     `;
     card.addEventListener('click', () => openDetailModal(dest.id, false));
@@ -270,8 +287,8 @@ function renderWantList() {
     card.innerHTML = `
       <div class="dest-card-photo" ${cover}>${dest.photos && dest.photos[0] ? '' : '🔖'}</div>
       <div class="dest-card-body">
-        <div class="dest-card-top-row"><span class="dest-card-name">${dest.name}</span></div>
-        <span class="dest-card-meta">${dest.category} · ${dest.location || 'No location'}</span>
+        <div class="dest-card-top-row"><span class="dest-card-name">${escapeHtml(dest.name)}</span></div>
+        <span class="dest-card-meta">${escapeHtml(dest.category)} · ${escapeHtml(dest.location || 'No location')}</span>
       </div>
     `;
     card.addEventListener('click', () => openDetailModal(dest.id, true));
@@ -287,8 +304,41 @@ async function refreshFollowCounts() {
   state.profile.followers = followersSnap.size;
 }
 
+function buildLinksHtml(links) {
+  if (!links) return '';
+  return LINK_PLATFORMS
+    .filter(p => links[p.key])
+    .map(p => {
+      const value = links[p.key];
+      const url = p.urlPrefix ? p.urlPrefix + value.replace(/^@/, '') : (value.startsWith('http') ? value : 'https://' + value);
+      return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${p.label}</a>`;
+    })
+    .join('');
+}
+
+function renderAvatar(imgEl, fallbackEl, photoURL, name) {
+  if (photoURL) {
+    imgEl.src = photoURL;
+    imgEl.classList.remove('hidden');
+    fallbackEl.classList.add('hidden');
+  } else {
+    imgEl.classList.add('hidden');
+    fallbackEl.classList.remove('hidden');
+    fallbackEl.textContent = (name || '?').charAt(0).toUpperCase();
+  }
+}
+
 async function renderProfile() {
-  document.getElementById('profileName').value = state.profile.name || '';
+  renderAvatar(
+    document.getElementById('profileAvatarImg'),
+    document.getElementById('profileAvatarFallback'),
+    state.profile.photoURL,
+    state.profile.name
+  );
+  document.getElementById('profileDisplayName').textContent = state.profile.name || currentUser.email;
+  document.getElementById('profileBioDisplay').textContent = state.profile.bio || '';
+  document.getElementById('profileLinksRow').innerHTML = buildLinksHtml(state.profile.links);
+
   const dests = state.destinations;
   document.getElementById('statTotal').textContent = dests.length;
   const avg = dests.length ? (dests.reduce((s, d) => s + d.score, 0) / dests.length) : 0;
@@ -305,48 +355,162 @@ async function renderProfile() {
     if (items.length === 0) return;
     const row = document.createElement('div');
     row.className = 'category-stat-row';
-    row.innerHTML = `<span>${cat}</span><span>${items.length} ranked</span>`;
+    row.innerHTML = `<span>${escapeHtml(cat)}</span><span>${items.length} ranked</span>`;
     catStatsEl.appendChild(row);
   });
 
-  renderFollowingList();
+  renderFriendsList();
 }
 
-document.getElementById('profileName').addEventListener('change', async (e) => {
-  const name = e.target.value.trim();
-  state.profile.name = name;
-  await setDoc(doc(db, 'users', currentUser.uid), {
-    name, nameLower: name.toLowerCase(), email: currentUser.email
-  }, { merge: true });
+// ---------- EDIT PROFILE MODAL ----------
+const editProfileModal = document.getElementById('editProfileModal');
+let editAvatarDataUrl = null;
+
+document.getElementById('editProfileBtn').addEventListener('click', () => {
+  document.getElementById('editNameInput').value = state.profile.name || '';
+  document.getElementById('editBioInput').value = state.profile.bio || '';
+  document.getElementById('editInstagramInput').value = state.profile.links?.instagram || '';
+  document.getElementById('editTiktokInput').value = state.profile.links?.tiktok || '';
+  document.getElementById('editTwitterInput').value = state.profile.links?.twitter || '';
+  document.getElementById('editWebsiteInput').value = state.profile.links?.website || '';
+  editAvatarDataUrl = state.profile.photoURL || null;
+  const previewImg = document.getElementById('editAvatarPreview');
+  if (state.profile.photoURL) previewImg.src = state.profile.photoURL;
+  else previewImg.removeAttribute('src');
+  editProfileModal.classList.remove('hidden');
+});
+document.getElementById('closeEditProfileModal').addEventListener('click', () => editProfileModal.classList.add('hidden'));
+
+document.getElementById('editAvatarInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  editAvatarDataUrl = await compressImage(file, 400);
+  document.getElementById('editAvatarPreview').src = editAvatarDataUrl;
 });
 
-async function renderFollowingList() {
-  const list = document.getElementById('followingList');
-  const empty = document.getElementById('followingEmpty');
-  list.innerHTML = '';
-  const snap = await getDocs(query(collection(db, 'follows'), where('followerId', '==', currentUser.uid)));
-  empty.classList.toggle('hidden', snap.size > 0);
-  for (const followDoc of snap.docs) {
-    const followingId = followDoc.data().followingId;
-    const userDoc = await getDoc(doc(db, 'users', followingId));
-    if (!userDoc.exists()) continue;
-    const card = document.createElement('div');
-    card.className = 'dest-card';
-    card.innerHTML = `
-      <div class="dest-card-photo">👤</div>
-      <div class="dest-card-body">
-        <div class="dest-card-top-row">
-          <span class="dest-card-name">${userDoc.data().name}</span>
-          <button class="btn-link unfollow-btn">Unfollow</button>
-        </div>
-      </div>
-    `;
-    card.querySelector('.unfollow-btn').addEventListener('click', async (ev) => {
-      ev.stopPropagation();
-      await deleteDoc(doc(db, 'follows', `${currentUser.uid}_${followingId}`));
-      renderFollowingList();
-      refreshFollowCounts();
+document.getElementById('saveProfileBtn').addEventListener('click', async () => {
+  const name = document.getElementById('editNameInput').value.trim();
+  if (!name) { alert('Please enter a name.'); return; }
+  const bio = document.getElementById('editBioInput').value.trim();
+  const links = {
+    instagram: document.getElementById('editInstagramInput').value.trim(),
+    tiktok: document.getElementById('editTiktokInput').value.trim(),
+    twitter: document.getElementById('editTwitterInput').value.trim(),
+    website: document.getElementById('editWebsiteInput').value.trim()
+  };
+  Object.keys(links).forEach(k => { if (!links[k]) delete links[k]; });
+
+  await setDoc(doc(db, 'users', currentUser.uid), {
+    name, nameLower: name.toLowerCase(), email: currentUser.email,
+    bio, links, photoURL: editAvatarDataUrl || ''
+  }, { merge: true });
+
+  state.profile.name = name;
+  state.profile.bio = bio;
+  state.profile.links = links;
+  state.profile.photoURL = editAvatarDataUrl || '';
+  editProfileModal.classList.add('hidden');
+  renderProfile();
+});
+
+// ---------- FRIENDS LIST (following / followers) ----------
+let friendsMode = 'following';
+document.getElementById('showFollowingChip').addEventListener('click', () => {
+  friendsMode = 'following';
+  document.getElementById('showFollowingChip').classList.add('active');
+  document.getElementById('showFollowersChip').classList.remove('active');
+  document.getElementById('friendsListTitle').textContent = 'Following';
+  renderFriendsList();
+});
+document.getElementById('showFollowersChip').addEventListener('click', () => {
+  friendsMode = 'followers';
+  document.getElementById('showFollowersChip').classList.add('active');
+  document.getElementById('showFollowingChip').classList.remove('active');
+  document.getElementById('friendsListTitle').textContent = 'Followers';
+  renderFriendsList();
+});
+
+async function isFollowing(uid) {
+  const snap = await getDoc(doc(db, 'follows', `${currentUser.uid}_${uid}`));
+  return snap.exists();
+}
+
+async function toggleFollow(uid, btnEl) {
+  const following = btnEl.dataset.following === 'true';
+  if (following) {
+    await deleteDoc(doc(db, 'follows', `${currentUser.uid}_${uid}`));
+    btnEl.textContent = 'Follow';
+    btnEl.dataset.following = 'false';
+  } else {
+    await setDoc(doc(db, 'follows', `${currentUser.uid}_${uid}`), {
+      followerId: currentUser.uid, followingId: uid, createdAt: serverTimestamp()
     });
+    btnEl.textContent = 'Following';
+    btnEl.dataset.following = 'true';
+  }
+  refreshFollowCounts().then(() => {
+    document.getElementById('statFollowers').textContent = state.profile.followers;
+    document.getElementById('statFollowing').textContent = state.profile.following;
+  });
+}
+
+function buildPersonCard(uid, data, showFollowBtn, alreadyFollowing) {
+  const card = document.createElement('div');
+  card.className = 'dest-card';
+  const avatarHtml = data.photoURL
+    ? `<img src="${data.photoURL}" style="width:100%;height:100%;object-fit:cover;" />`
+    : '👤';
+  card.innerHTML = `
+    <div class="dest-card-photo">${avatarHtml}</div>
+    <div class="dest-card-body">
+      <div class="dest-card-top-row">
+        <span class="dest-card-name">${escapeHtml(data.name || 'Someone')}</span>
+        ${showFollowBtn ? `<button class="btn-link follow-toggle-btn" data-following="${alreadyFollowing}">${alreadyFollowing ? 'Following' : 'Follow'}</button>` : ''}
+      </div>
+      ${data.bio ? `<span class="dest-card-meta">${escapeHtml(data.bio)}</span>` : ''}
+    </div>
+  `;
+  card.addEventListener('click', () => openViewProfile(uid));
+  if (showFollowBtn) {
+    const btn = card.querySelector('.follow-toggle-btn');
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      toggleFollow(uid, btn);
+    });
+  }
+  return card;
+}
+
+async function renderFriendsList() {
+  const list = document.getElementById('friendsList');
+  const empty = document.getElementById('friendsEmpty');
+  list.innerHTML = '';
+
+  const field = friendsMode === 'following' ? 'followerId' : 'followingId';
+  const otherField = friendsMode === 'following' ? 'followingId' : 'followerId';
+  const snap = await getDocs(query(collection(db, 'follows'), where(field, '==', currentUser.uid)));
+  empty.classList.toggle('hidden', snap.size > 0);
+
+  const myFollowingSnap = await getDocs(query(collection(db, 'follows'), where('followerId', '==', currentUser.uid)));
+  const myFollowingIds = new Set(myFollowingSnap.docs.map(d => d.data().followingId));
+
+  for (const followDoc of snap.docs) {
+    const otherId = followDoc.data()[otherField];
+    const userDoc = await getDoc(doc(db, 'users', otherId));
+    if (!userDoc.exists()) continue;
+    const showFollowBtn = friendsMode === 'followers';
+    const card = buildPersonCard(otherId, userDoc.data(), showFollowBtn, myFollowingIds.has(otherId));
+    if (friendsMode === 'following') {
+      const btn = document.createElement('button');
+      btn.className = 'btn-link follow-toggle-btn';
+      btn.dataset.following = 'true';
+      btn.textContent = 'Unfollow';
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        toggleFollow(otherId, btn).then(() => renderFriendsList());
+      });
+      card.querySelector('.dest-card-top-row').appendChild(btn);
+    }
     list.appendChild(card);
   }
 }
@@ -375,36 +539,77 @@ async function searchUsers(term) {
 
   snap.docs.forEach(userDoc => {
     if (userDoc.id === currentUser.uid) return;
-    const data = userDoc.data();
-    const alreadyFollowing = myFollowingIds.has(userDoc.id);
-    const card = document.createElement('div');
-    card.className = 'dest-card';
-    card.innerHTML = `
-      <div class="dest-card-photo">👤</div>
-      <div class="dest-card-body">
-        <div class="dest-card-top-row">
-          <span class="dest-card-name">${data.name}</span>
-          <button class="btn-link follow-btn">${alreadyFollowing ? 'Following' : 'Follow'}</button>
-        </div>
-      </div>
-    `;
-    const followBtn = card.querySelector('.follow-btn');
-    followBtn.addEventListener('click', async (ev) => {
-      ev.stopPropagation();
-      if (followBtn.textContent === 'Follow') {
-        await setDoc(doc(db, 'follows', `${currentUser.uid}_${userDoc.id}`), {
-          followerId: currentUser.uid, followingId: userDoc.id, createdAt: serverTimestamp()
-        });
-        followBtn.textContent = 'Following';
-      } else {
-        await deleteDoc(doc(db, 'follows', `${currentUser.uid}_${userDoc.id}`));
-        followBtn.textContent = 'Follow';
-      }
-      refreshFollowCounts();
-      renderFollowingList();
-    });
+    const card = buildPersonCard(userDoc.id, userDoc.data(), true, myFollowingIds.has(userDoc.id));
     resultsEl.appendChild(card);
   });
+}
+
+// ---------- VIEW PROFILE MODAL (read-only) ----------
+const viewProfileModal = document.getElementById('viewProfileModal');
+document.getElementById('closeViewProfileModal').addEventListener('click', () => viewProfileModal.classList.add('hidden'));
+
+async function openViewProfile(uid) {
+  if (!uid) return;
+  if (uid === currentUser.uid) { switchTab('profile'); return; }
+
+  const userDoc = await getDoc(doc(db, 'users', uid));
+  if (!userDoc.exists()) return;
+  const data = userDoc.data();
+
+  const destsSnap = await getDocs(query(collection(db, 'destinations'), where('ownerId', '==', uid)));
+  const ranked = destsSnap.docs.map(d => d.data()).filter(d => d.status === 'ranked').sort((a, b) => b.score - a.score);
+  const avg = ranked.length ? (ranked.reduce((s, d) => s + d.score, 0) / ranked.length) : 0;
+
+  const followingSnap = await getDocs(query(collection(db, 'follows'), where('followerId', '==', uid)));
+  const followersSnap = await getDocs(query(collection(db, 'follows'), where('followingId', '==', uid)));
+  const alreadyFollowing = await isFollowing(uid);
+
+  document.getElementById('viewProfileName').textContent = data.name || 'Profile';
+  const avatarHtml = data.photoURL
+    ? `<img src="${data.photoURL}" class="profile-avatar" />`
+    : `<div class="profile-avatar profile-avatar-fallback">${escapeHtml((data.name || '?').charAt(0).toUpperCase())}</div>`;
+
+  const topDestsHtml = ranked.slice(0, 8).map(d => `
+    <div class="dest-card" style="cursor:default;">
+      <div class="dest-card-photo" ${d.photos && d.photos[0] ? `style="background-image:url('${d.photos[0]}')"` : ''}>${d.photos && d.photos[0] ? '' : '📍'}</div>
+      <div class="dest-card-body">
+        <div class="dest-card-top-row">
+          <span class="dest-card-name">${escapeHtml(d.name)}</span>
+          <span class="score-badge ${scoreClass(d.score)}">${formatScore(d.score)}</span>
+        </div>
+        <span class="dest-card-meta">${escapeHtml(d.category)}</span>
+      </div>
+    </div>
+  `).join('');
+
+  document.getElementById('viewProfileBody').innerHTML = `
+    <div class="view-profile-header">
+      ${avatarHtml}
+      <div>
+        <div class="profile-display-name">${escapeHtml(data.name || '')}</div>
+        ${data.bio ? `<p class="profile-bio-display">${escapeHtml(data.bio)}</p>` : ''}
+        <div class="profile-links-row">${buildLinksHtml(data.links)}</div>
+      </div>
+    </div>
+    <div class="view-profile-stats">
+      <div class="view-profile-stat"><span>${ranked.length}</span><label>Ranked</label></div>
+      <div class="view-profile-stat"><span>${avg.toFixed(1)}</span><label>Avg Score</label></div>
+      <div class="view-profile-stat"><span>${followersSnap.size}</span><label>Followers</label></div>
+      <div class="view-profile-stat"><span>${followingSnap.size}</span><label>Following</label></div>
+    </div>
+    <button class="btn ${alreadyFollowing ? 'btn-secondary' : 'btn-primary'}" id="viewProfileFollowBtn" data-following="${alreadyFollowing}" style="width:100%; margin-bottom:16px;">${alreadyFollowing ? 'Following' : 'Follow'}</button>
+    <h3>Top Destinations</h3>
+    <div class="card-list">${topDestsHtml || '<p class="empty-state">No ranked destinations yet.</p>'}</div>
+  `;
+
+  document.getElementById('viewProfileFollowBtn').addEventListener('click', async (ev) => {
+    await toggleFollow(uid, ev.target);
+    ev.target.className = ev.target.dataset.following === 'true' ? 'btn btn-secondary' : 'btn btn-primary';
+    ev.target.style.width = '100%';
+    ev.target.style.marginBottom = '16px';
+  });
+
+  viewProfileModal.classList.remove('hidden');
 }
 
 // ---------- ADD DESTINATION MODAL FLOW ----------
@@ -634,11 +839,11 @@ function openDetailModal(id, isWant) {
   const body = document.getElementById('detailBody');
   body.innerHTML = `
     ${photosHtml ? `<div class="detail-photos">${photosHtml}</div>` : ''}
-    <div class="detail-row"><label>Category</label>${dest.category}</div>
-    <div class="detail-row"><label>Location</label>${dest.location || '—'}${dest.lat && dest.lon ? ` · <a href="https://www.openstreetmap.org/?mlat=${dest.lat}&mlon=${dest.lon}#map=14/${dest.lat}/${dest.lon}" target="_blank" rel="noopener">View on map</a>` : ''}</div>
+    <div class="detail-row"><label>Category</label>${escapeHtml(dest.category)}</div>
+    <div class="detail-row"><label>Location</label>${escapeHtml(dest.location || '—')}${dest.lat && dest.lon ? ` · <a href="https://www.openstreetmap.org/?mlat=${dest.lat}&mlon=${dest.lon}#map=14/${dest.lat}/${dest.lon}" target="_blank" rel="noopener">View on map</a>` : ''}</div>
     ${!isWant ? `<div class="detail-row"><label>Score</label><span class="score-badge ${scoreClass(dest.score)}" style="display:inline-flex">${formatScore(dest.score)}</span></div>` : ''}
-    ${dest.notes ? `<div class="detail-row"><label>Notes</label>${dest.notes}</div>` : ''}
-    ${dest.tags && dest.tags.length ? `<div class="detail-row"><label>Tags</label>${dest.tags.join(', ')}</div>` : ''}
+    ${dest.notes ? `<div class="detail-row"><label>Notes</label>${escapeHtml(dest.notes)}</div>` : ''}
+    ${dest.tags && dest.tags.length ? `<div class="detail-row"><label>Tags</label>${escapeHtml(dest.tags.join(', '))}</div>` : ''}
     <div class="detail-row"><label>Date</label>${dest.dateVisited}</div>
     <div class="detail-actions">
       ${isWant ? `<button class="btn btn-primary" id="markVisitedBtn">Mark as Visited</button>` : ''}

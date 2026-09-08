@@ -95,13 +95,24 @@
       <h2>Profile</h2>
       <button class="btn-link" id="signOutBtn">Sign Out</button>
     </div>
+
+    <div class="profile-header-card">
+      <img id="profileAvatarImg" class="profile-avatar hidden" src="" alt="Profile picture" />
+      <div id="profileAvatarFallback" class="profile-avatar profile-avatar-fallback">?</div>
+      <div class="profile-header-info">
+        <div id="profileDisplayName" class="profile-display-name">—</div>
+        <p id="profileBioDisplay" class="profile-bio-display"></p>
+        <div id="profileLinksRow" class="profile-links-row"></div>
+      </div>
+      <button class="btn btn-secondary profile-edit-btn" id="editProfileBtn">Edit Profile</button>
+    </div>
+
     <div class="profile-card">
-      <input id="profileName" class="text-input" type="text" placeholder="Your name" />
       <div class="stats-grid">
         <div class="stat-box"><span id="statTotal">0</span><label>Ranked</label></div>
         <div class="stat-box"><span id="statAvg">0.0</span><label>Avg Score</label></div>
-        <div class="stat-box"><span id="statFollowers">0</span><label>Followers</label></div>
-        <div class="stat-box"><span id="statFollowing">0</span><label>Following</label></div>
+        <button class="stat-box stat-box-btn" id="statFollowersBtn"><span id="statFollowers">0</span><label>Followers</label></button>
+        <button class="stat-box stat-box-btn" id="statFollowingBtn"><span id="statFollowing">0</span><label>Following</label></button>
       </div>
       <h3>By Category</h3>
       <div id="categoryStats" class="category-stats"></div>
@@ -111,9 +122,15 @@
     <input id="userSearchInput" class="text-input" type="text" placeholder="Search by name..." />
     <div id="userSearchResults" class="card-list"></div>
 
-    <h3>Following</h3>
-    <div id="followingList" class="card-list"></div>
-    <p id="followingEmpty" class="empty-state hidden">Not following anyone yet.</p>
+    <div class="section-title-row">
+      <h3 id="friendsListTitle">Following</h3>
+      <div class="chip-row" style="margin-bottom:0;">
+        <button class="chip active" id="showFollowingChip">Following</button>
+        <button class="chip" id="showFollowersChip">Followers</button>
+      </div>
+    </div>
+    <div id="friendsList" class="card-list"></div>
+    <p id="friendsEmpty" class="empty-state hidden">Nobody here yet.</p>
   </main>
 
   <!-- BOTTOM NAV -->
@@ -207,6 +224,49 @@
       <button class="close-btn" id="closeDetailModal">✕</button>
     </div>
     <div class="modal-body" id="detailBody"></div>
+  </div>
+</div>
+
+<!-- EDIT PROFILE MODAL -->
+<div id="editProfileModal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Edit Profile</h3>
+      <button class="close-btn" id="closeEditProfileModal">✕</button>
+    </div>
+    <div class="modal-body">
+      <label>Profile Picture</label>
+      <div class="avatar-edit-row">
+        <img id="editAvatarPreview" class="profile-avatar" alt="" />
+        <input id="editAvatarInput" type="file" accept="image/*" class="text-input" />
+      </div>
+      <label>Name</label>
+      <input id="editNameInput" class="text-input" type="text" />
+      <label>Bio</label>
+      <textarea id="editBioInput" class="text-input" maxlength="160" placeholder="A short bio..."></textarea>
+      <label>Instagram</label>
+      <input id="editInstagramInput" class="text-input" placeholder="username (without @)" />
+      <label>TikTok</label>
+      <input id="editTiktokInput" class="text-input" placeholder="username (without @)" />
+      <label>X / Twitter</label>
+      <input id="editTwitterInput" class="text-input" placeholder="username (without @)" />
+      <label>Website</label>
+      <input id="editWebsiteInput" class="text-input" placeholder="https://yoursite.com" />
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="saveProfileBtn">Save Profile</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- VIEW PROFILE MODAL (read-only, for viewing other users) -->
+<div id="viewProfileModal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="viewProfileName">Profile</h3>
+      <button class="close-btn" id="closeViewProfileModal">✕</button>
+    </div>
+    <div class="modal-body" id="viewProfileBody"></div>
   </div>
 </div>
 
