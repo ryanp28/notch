@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NOTCH — Rank Your Destinations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- AUTH SCREEN -->
+<div id="authScreen" class="phone auth-screen">
+  <div class="auth-logo">
+    <span class="letter">N</span>
+    <span class="pin"><span class="globe"></span></span>
+    <span class="letter-group">TCH</span>
+  </div>
+  <p class="auth-tagline">Rank the places you've been.</p>
+
+  <div class="auth-tabs">
+    <button class="auth-tab active" data-authtab="login">Log In</button>
+    <button class="auth-tab" data-authtab="signup">Sign Up</button>
+  </div>
+
+  <div id="authForm-login" class="auth-form">
+    <input id="loginEmail" class="text-input" type="email" placeholder="Email" />
+    <input id="loginPassword" class="text-input" type="password" placeholder="Password" />
+    <button class="btn btn-primary" id="loginBtn">Log In</button>
+  </div>
+
+  <div id="authForm-signup" class="auth-form hidden">
+    <input id="signupName" class="text-input" type="text" placeholder="Display name" />
+    <input id="signupEmail" class="text-input" type="email" placeholder="Email" />
+    <input id="signupPassword" class="text-input" type="password" placeholder="Password (6+ characters)" />
+    <button class="btn btn-primary" id="signupBtn">Create Account</button>
+  </div>
+
+  <p id="authError" class="auth-error hidden"></p>
+</div>
+
+<div class="phone hidden" id="mainApp">
+
+  <!-- HEADER -->
+  <header class="app-header">
+    <div class="logo">
+      <span class="letter">N</span>
+      <span class="pin"><span class="globe"></span></span>
+      <span class="letter-group">TCH</span>
+    </div>
+    <button id="profileBtn" class="header-icon-btn" title="Profile">👤</button>
+  </header>
+
+  <!-- FEED TAB -->
+  <main id="tab-feed" class="tab-panel active">
+    <h2>Feed</h2>
+    <p class="hint-text" id="feedHint">Follow friends in your Profile tab to see their rankings here.</p>
+    <div id="feedList" class="card-list"></div>
+  </main>
+
+  <!-- RANKINGS TAB -->
+  <main id="tab-rankings" class="tab-panel">
+    <h2>My Rankings</h2>
+    <input id="searchInput" type="text" placeholder="Search your destinations..." class="text-input" />
+    <div class="chip-row" id="categoryFilters"></div>
+    <div id="rankingsList" class="card-list"></div>
+    <p id="rankingsEmpty" class="empty-state hidden">No ranked destinations yet. Tap "+" to add your first one.</p>
+  </main>
+
+  <!-- ADD TAB (opens modal) -->
+  <main id="tab-add" class="tab-panel"></main>
+
+  <!-- WANT TO VISIT TAB -->
+  <main id="tab-want" class="tab-panel">
+    <h2>Want to Visit</h2>
+    <div id="wantList" class="card-list"></div>
+    <p id="wantEmpty" class="empty-state hidden">Nothing saved yet. Add a place you're dreaming about.</p>
+  </main>
+
+  <!-- PROFILE TAB -->
+  <main id="tab-profile" class="tab-panel">
+    <div class="section-title-row">
+      <h2>Profile</h2>
+      <button class="btn-link" id="signOutBtn">Sign Out</button>
+    </div>
+    <div class="profile-card">
+      <input id="profileName" class="text-input" type="text" placeholder="Your name" />
+      <div class="stats-grid">
+        <div class="stat-box"><span id="statTotal">0</span><label>Ranked</label></div>
+        <div class="stat-box"><span id="statAvg">0.0</span><label>Avg Score</label></div>
+        <div class="stat-box"><span id="statFollowers">0</span><label>Followers</label></div>
+        <div class="stat-box"><span id="statFollowing">0</span><label>Following</label></div>
+      </div>
+      <h3>By Category</h3>
+      <div id="categoryStats" class="category-stats"></div>
+    </div>
+
+    <h3>Find Friends</h3>
+    <input id="userSearchInput" class="text-input" type="text" placeholder="Search by name..." />
+    <div id="userSearchResults" class="card-list"></div>
+
+    <h3>Following</h3>
+    <div id="followingList" class="card-list"></div>
+    <p id="followingEmpty" class="empty-state hidden">Not following anyone yet.</p>
+  </main>
+
+  <!-- BOTTOM NAV -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-tab="feed"><span>📰</span>Feed</button>
+    <button class="nav-btn" data-tab="rankings"><span>🏆</span>Rankings</button>
+    <button class="nav-btn nav-add" id="openAddBtn"><span>+</span></button>
+    <button class="nav-btn" data-tab="want"><span>🔖</span>Want</button>
+    <button class="nav-btn" data-tab="profile"><span>👤</span>Profile</button>
+  </nav>
+</div>
+
+<!-- ADD DESTINATION MODAL -->
+<div id="addModal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="addModalTitle">Add a Destination</h3>
+      <button class="close-btn" id="closeAddModal">✕</button>
+    </div>
+    <div class="modal-body" id="addModalBody">
+      <!-- step 1: details -->
+      <div id="stepDetails" class="modal-step">
+        <label>Name</label>
+        <input id="destName" class="text-input" placeholder="e.g. Kyoto, or The Grand Canyon" />
+        <label>Category</label>
+        <select id="destCategory" class="text-input">
+          <option value="City">City</option>
+          <option value="Landmark">Landmark</option>
+          <option value="Nature">Nature</option>
+          <option value="Food & Drink">Food & Drink</option>
+          <option value="Lodging">Lodging</option>
+          <option value="Activity">Activity</option>
+        </select>
+        <label>Location</label>
+        <input id="destLocation" class="text-input" placeholder="City, Country" />
+        <label>Notes</label>
+        <textarea id="destNotes" class="text-input" placeholder="Anything you want to remember..."></textarea>
+        <label>Tags (comma separated)</label>
+        <input id="destTags" class="text-input" placeholder="solo trip, hiking, romantic" />
+        <label>Photos</label>
+        <input id="destPhotos" type="file" accept="image/*" multiple class="text-input" />
+        <div id="photoPreview" class="photo-preview-row"></div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" id="saveWantBtn">Save to Want to Visit</button>
+          <button class="btn btn-primary" id="startRankingBtn">I've Been Here — Rank It</button>
+        </div>
+      </div>
+
+      <!-- step 2: sentiment -->
+      <div id="stepSentiment" class="modal-step hidden">
+        <p class="step-prompt">How did you feel about it overall?</p>
+        <div class="sentiment-options">
+          <button class="sentiment-btn loved" data-sentiment="loved">😍<br>Loved it</button>
+          <button class="sentiment-btn fine" data-sentiment="fine">🙂<br>It was fine</button>
+          <button class="sentiment-btn disliked" data-sentiment="disliked">😕<br>Not for me</button>
+        </div>
+      </div>
+
+      <!-- step 3: comparisons -->
+      <div id="stepCompare" class="modal-step hidden">
+        <p class="step-prompt" id="comparePrompt">Which did you like more?</p>
+        <div class="compare-row">
+          <button class="compare-card" id="compareOptionA"></button>
+          <span class="vs-label">vs</span>
+          <button class="compare-card" id="compareOptionB"></button>
+        </div>
+        <button class="btn btn-tertiary" id="tieBtn">Too close to call</button>
+      </div>
+
+      <!-- step 4: done -->
+      <div id="stepDone" class="modal-step hidden">
+        <div class="done-score">
+          <span id="doneScore">0.0</span>
+          <label>Score</label>
+        </div>
+        <p id="doneMessage">Added to your rankings!</p>
+        <button class="btn btn-primary" id="finishBtn">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DESTINATION DETAIL MODAL -->
+<div id="detailModal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="detailName">Destination</h3>
+      <button class="close-btn" id="closeDetailModal">✕</button>
+    </div>
+    <div class="modal-body" id="detailBody"></div>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
