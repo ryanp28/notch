@@ -94,12 +94,15 @@ onAuthStateChanged(auth, async (user) => {
     state.profile.photoURL = data.photoURL || '';
     state.profile.links = data.links || {};
     attachDestinationsListener();
+    attachNotificationsListener();
     refreshFollowCounts();
     switchTab('feed');
   } else {
     document.getElementById('authScreen').classList.remove('hidden');
     document.getElementById('mainApp').classList.add('hidden');
     if (unsubscribeDestinations) { unsubscribeDestinations(); unsubscribeDestinations = null; }
+    if (unsubscribeNotifications) { unsubscribeNotifications(); unsubscribeNotifications = null; }
+    notificationsCache = [];
     state = { destinations: [], wantToVisit: [], profile: emptyProfile() };
   }
 });
@@ -117,6 +120,88 @@ function attachDestinationsListener() {
     if (activeTab === 'tab-profile') renderProfile();
   });
 }
+
+// ---------- NOTIFICATIONS ----------
+let unsubscribeNotifications = null;
+let notificationsCache = [];
+
+function attachNotificationsListener() {
+  const q = query(collection(db, 'notifications'), where('recipientId', '==', currentUser.uid), limit(100));
+  unsubscribeNotifications = onSnapshot(q, (snapshot) => {
+    notificationsCache = snapshot.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+    const unreadCount = notificationsCache.filter(n => !n.read).length;
+    const badge = document.getElementById('notifBadge');
+    if (unreadCount > 0) {
+      badge.textContent = unreadCount > 9 ? '9+' : unreadCount;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+    if (!document.getElementById('notifModal').classList.contains('hidden')) renderNotificationsList();
+  });
+}
+
+function notificationText(n) {
+  if (n.type === 'follow') return `<strong>${escapeHtml(n.actorName)}</strong> started following you`;
+  if (n.type === 'cheer') return `<strong>${escapeHtml(n.actorName)}</strong> cheered your ranking of ${escapeHtml(n.destinationName)}`;
+  if (n.type === 'comment') return `<strong>${escapeHtml(n.actorName)}</strong> commented on ${escapeHtml(n.destinationName)}`;
+  return 'New notification';
+}
+
+function timeAgo(ts) {
+  if (!ts?.toMillis) return '';
+  const diffMs = Date.now() - ts.toMillis();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function renderNotificationsList() {
+  const list = document.getElementById('notifList');
+  const empty = document.getElementById('notifEmpty');
+  list.innerHTML = '';
+  empty.classList.toggle('hidden', notificationsCache.length > 0);
+
+  notificationsCache.forEach(n => {
+    const row = document.createElement('button');
+    row.className = 'dest-card' + (n.read ? '' : ' notif-unread');
+    const icon = n.type === 'follow' ? '👤' : n.type === 'cheer' ? '🤍' : '💬';
+    row.innerHTML = `
+      <div class="dest-card-photo">${icon}</div>
+      <div class="dest-card-body">
+        <span class="dest-card-meta">${notificationText(n)}</span>
+        <span class="rank-badge">${timeAgo(n.createdAt)}</span>
+      </div>
+    `;
+    row.addEventListener('click', async () => {
+      document.getElementById('notifModal').classList.add('hidden');
+      if (n.type === 'follow') {
+        openViewProfile(n.actorId);
+      } else if (n.destinationId) {
+        const snap = await getDoc(doc(db, 'destinations', n.destinationId));
+        if (snap.exists()) openDestinationDetail({ id: snap.id, ...snap.data() });
+      }
+    });
+    list.appendChild(row);
+  });
+}
+
+document.getElementById('notifBtn').addEventListener('click', async () => {
+  renderNotificationsList();
+  document.getElementById('notifModal').classList.remove('hidden');
+  const unread = notificationsCache.filter(n => !n.read);
+  for (const n of unread) {
+    updateDoc(doc(db, 'notifications', n.id), { read: true });
+  }
+});
+document.getElementById('closeNotifModal').addEventListener('click', () => {
+  document.getElementById('notifModal').classList.add('hidden');
+});
 
 // ---------- NAVIGATION ----------
 const tabButtons = document.querySelectorAll('.nav-btn[data-tab]');
@@ -554,6 +639,16 @@ async function toggleFollow(uid, btnEl) {
     });
     btnEl.textContent = 'Following';
     btnEl.dataset.following = 'true';
+    if (uid !== currentUser.uid) {
+      addDoc(collection(db, 'notifications'), {
+        recipientId: uid,
+        type: 'follow',
+        actorId: currentUser.uid,
+        actorName: state.profile.name || currentUser.email,
+        read: false,
+        createdAt: serverTimestamp()
+      });
+    }
   }
   refreshFollowCounts().then(() => {
     document.getElementById('statFollowers').textContent = state.profile.followers;
@@ -999,6 +1094,7 @@ function openDestinationDetail(dest) {
       <div class="feed-social-row">
         <button class="cheer-btn" id="detailCheerBtn">🤍 <span class="cheer-count">0</span></button>
         <span class="comment-count-label" id="detailCommentCount">0 comments</span>
+        <button class="btn-link" id="detailShareBtn" style="margin-left:auto;">Share</button>
       </div>
       <div class="comment-list" id="detailCommentList"></div>
       <div class="comment-input-row">
@@ -1039,14 +1135,16 @@ function openDestinationDetail(dest) {
   }
 
   if (!isWant) {
-    attachDetailSocialControls(dest.id);
+    attachDetailSocialControls(dest);
+    document.getElementById('detailShareBtn').addEventListener('click', () => shareDestinationCard(dest));
   }
 
   detailModal.classList.remove('hidden');
 }
 
 // ---------- DETAIL MODAL: REACTIONS & COMMENTS ----------
-async function attachDetailSocialControls(destId) {
+async function attachDetailSocialControls(dest) {
+  const destId = dest.id;
   const cheerBtn = document.getElementById('detailCheerBtn');
   const commentListEl = document.getElementById('detailCommentList');
   const commentCountLabel = document.getElementById('detailCommentCount');
@@ -1067,6 +1165,18 @@ async function attachDetailSocialControls(destId) {
     } else {
       await setDoc(reactionRef, { destinationId: destId, userId: currentUser.uid, createdAt: serverTimestamp() });
       cheerBtn.classList.add('cheered');
+      if (dest.ownerId !== currentUser.uid) {
+        addDoc(collection(db, 'notifications'), {
+          recipientId: dest.ownerId,
+          type: 'cheer',
+          actorId: currentUser.uid,
+          actorName: state.profile.name || currentUser.email,
+          destinationId: dest.id,
+          destinationName: dest.name,
+          read: false,
+          createdAt: serverTimestamp()
+        });
+      }
     }
     const freshSnap = await getDocs(query(collection(db, 'reactions'), where('destinationId', '==', destId)));
     cheerBtn.innerHTML = `${cheerBtn.classList.contains('cheered') ? '❤️' : '🤍'} <span class="cheer-count">${freshSnap.size}</span>`;
@@ -1094,6 +1204,18 @@ async function attachDetailSocialControls(destId) {
       text,
       createdAt: serverTimestamp()
     });
+    if (dest.ownerId !== currentUser.uid) {
+      addDoc(collection(db, 'notifications'), {
+        recipientId: dest.ownerId,
+        type: 'comment',
+        actorId: currentUser.uid,
+        actorName: state.profile.name || currentUser.email,
+        destinationId: dest.id,
+        destinationName: dest.name,
+        read: false,
+        createdAt: serverTimestamp()
+      });
+    }
     loadComments();
   });
 }
@@ -1171,4 +1293,220 @@ document.getElementById('saveEditDestBtn').addEventListener('click', async () =>
 
   await updateDoc(doc(db, 'destinations', editDestId), updateData);
   editDestModal.classList.add('hidden');
+});
+
+// ---------- SHARE CARD ----------
+function loadImageEl(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+function roundRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function drawImageCover(ctx, img, x, y, w, h) {
+  const imgRatio = img.width / img.height;
+  const targetRatio = w / h;
+  let sx, sy, sw, sh;
+  if (imgRatio > targetRatio) {
+    sh = img.height;
+    sw = sh * targetRatio;
+    sx = (img.width - sw) / 2;
+    sy = 0;
+  } else {
+    sw = img.width;
+    sh = sw / targetRatio;
+    sx = 0;
+    sy = (img.height - sh) / 2;
+  }
+  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+}
+
+function wrapCenteredText(ctx, text, x, y, maxWidth, lineHeight) {
+  const words = text.split(' ');
+  let line = '';
+  const lines = [];
+  words.forEach(word => {
+    const testLine = line ? line + ' ' + word : word;
+    if (ctx.measureText(testLine).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = testLine;
+    }
+  });
+  lines.push(line);
+  const startY = y - ((lines.length - 1) * lineHeight) / 2;
+  lines.forEach((l, i) => ctx.fillText(l, x, startY + i * lineHeight));
+}
+
+function drawShareLogoMark(ctx, cx, cy, r) {
+  ctx.fillStyle = '#d4a437';
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.55, cy + r * 0.55);
+  ctx.lineTo(cx + r * 0.55, cy + r * 0.55);
+  ctx.lineTo(cx, cy + r * 1.85);
+  ctx.closePath();
+  ctx.fill();
+  const gr = r * 0.56;
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(cx, cy, gr, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#1b4332';
+  ctx.beginPath();
+  ctx.ellipse(cx - gr * 0.3, cy - gr * 0.25, gr * 0.32, gr * 0.28, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(cx + gr * 0.25, cy + gr * 0.28, gr * 0.25, gr * 0.21, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+async function buildShareCanvas(dest) {
+  await Promise.all([
+    document.fonts.load("700 90px 'Playfair Display'"),
+    document.fonts.load("italic 400 36px 'Playfair Display'"),
+    document.fonts.load("700 64px 'Inter'"),
+    document.fonts.load("400 40px 'Inter'"),
+    document.fonts.load("600 30px 'Inter'")
+  ]);
+
+  const W = 1080, H = 1920;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#1b4332');
+  grad.addColorStop(1, '#143528');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.font = "700 90px 'Playfair Display', serif";
+  ctx.fillStyle = '#ffffff';
+  const nWidth = ctx.measureText('N').width;
+  const tchWidth = ctx.measureText('TCH').width;
+  const pinR = 55;
+  const gap = 16;
+  const totalW = nWidth + gap * 2 + pinR * 2 + tchWidth;
+  const startX = (W - totalW) / 2;
+  const logoY = 150;
+  ctx.fillText('N', startX, logoY);
+  const pinCx = startX + nWidth + gap + pinR;
+  drawShareLogoMark(ctx, pinCx, logoY - 8, pinR);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('TCH', pinCx + pinR + gap, logoY);
+
+  const photoX = 90, photoY = 260, photoW = W - 180, photoH = 1000;
+  if (dest.photos && dest.photos[0]) {
+    try {
+      const img = await loadImageEl(dest.photos[0]);
+      ctx.save();
+      roundRectPath(ctx, photoX, photoY, photoW, photoH, 32);
+      ctx.clip();
+      drawImageCover(ctx, img, photoX, photoY, photoW, photoH);
+      ctx.restore();
+    } catch (e) {
+      ctx.fillStyle = '#2e5d45';
+      roundRectPath(ctx, photoX, photoY, photoW, photoH, 32);
+      ctx.fill();
+    }
+  } else {
+    ctx.fillStyle = '#2e5d45';
+    roundRectPath(ctx, photoX, photoY, photoW, photoH, 32);
+    ctx.fill();
+    ctx.fillStyle = '#d4a437';
+    ctx.font = '200px serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('📍', W / 2, photoY + photoH / 2 + 20);
+  }
+
+  const scoreColor = dest.score >= 8 ? '#2e7d4f' : dest.score >= 5 ? '#d4a437' : '#c0392b';
+  const badgeR = 90;
+  const badgeCx = photoX + photoW - 100;
+  const badgeCy = photoY + photoH - 100;
+  ctx.beginPath();
+  ctx.arc(badgeCx, badgeCy, badgeR, 0, Math.PI * 2);
+  ctx.fillStyle = scoreColor;
+  ctx.fill();
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = '#ffffff';
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = "700 64px 'Inter', sans-serif";
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(formatScore(dest.score), badgeCx, badgeCy + 4);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.font = "700 76px 'Playfair Display', serif";
+  wrapCenteredText(ctx, dest.name, W / 2, photoY + photoH + 110, W - 160, 84);
+
+  ctx.fillStyle = '#e6c874';
+  ctx.font = "400 40px 'Inter', sans-serif";
+  ctx.fillText(`${dest.category}${dest.location ? ' · ' + dest.location : ''}`, W / 2, photoY + photoH + 220);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.font = "italic 400 36px 'Playfair Display', serif";
+  ctx.fillText(`Ranked by ${dest.ownerName || 'a NOTCH user'}`, W / 2, H - 140);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = "600 30px 'Inter', sans-serif";
+  ctx.fillText('ryanp28.github.io/notch', W / 2, H - 70);
+
+  return canvas;
+}
+
+async function shareDestinationCard(dest) {
+  const canvas = await buildShareCanvas(dest);
+  canvas.toBlob((blob) => {
+    const previewUrl = URL.createObjectURL(blob);
+    document.getElementById('shareCardPreview').src = previewUrl;
+
+    document.getElementById('downloadCardBtn').onclick = () => {
+      const a = document.createElement('a');
+      a.href = previewUrl;
+      a.download = `notch-${dest.name.replace(/\s+/g, '-').toLowerCase()}.png`;
+      a.click();
+    };
+
+    const shareBtn = document.getElementById('shareCardBtn');
+    const file = new File([blob], 'notch-share.png', { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      shareBtn.classList.remove('hidden');
+      shareBtn.onclick = () => {
+        navigator.share({
+          files: [file],
+          title: dest.name,
+          text: `${dest.name} — ${formatScore(dest.score)}/10 on NOTCH`
+        }).catch(() => {});
+      };
+    } else {
+      shareBtn.classList.add('hidden');
+    }
+
+    document.getElementById('shareCardModal').classList.remove('hidden');
+  }, 'image/png');
+}
+
+document.getElementById('closeShareCardModal').addEventListener('click', () => {
+  document.getElementById('shareCardModal').classList.add('hidden');
 });

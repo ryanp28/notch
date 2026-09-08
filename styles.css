@@ -91,12 +91,31 @@ body {
 .globe::before { width: 0.18em; height: 0.16em; top: 0.02em; left: 0.04em; }
 .globe::after { width: 0.12em; height: 0.12em; bottom: 0.03em; right: 0.02em; }
 
+.header-icons { display: flex; align-items: center; gap: 14px; }
 .header-icon-btn {
   background: transparent;
   border: none;
   font-size: 20px;
   cursor: pointer;
+  position: relative;
 }
+.notif-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  background: var(--danger);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+}
+.notif-unread { background: var(--gold-light) !important; }
 
 /* TAB PANELS */
 .tab-panel {

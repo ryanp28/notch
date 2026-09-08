@@ -62,7 +62,10 @@
       <span class="pin"><span class="globe"></span></span>
       <span class="letter-group">TCH</span>
     </div>
-    <button id="profileBtn" class="header-icon-btn" title="Profile">👤</button>
+    <div class="header-icons">
+      <button id="notifBtn" class="header-icon-btn" title="Notifications">🔔<span id="notifBadge" class="notif-badge hidden">0</span></button>
+      <button id="profileBtn" class="header-icon-btn" title="Profile">👤</button>
+    </div>
   </header>
 
   <!-- FEED TAB -->
@@ -243,6 +246,37 @@
       <button class="close-btn" id="closeDetailModal">✕</button>
     </div>
     <div class="modal-body" id="detailBody"></div>
+  </div>
+</div>
+
+<!-- NOTIFICATIONS MODAL -->
+<div id="notifModal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Notifications</h3>
+      <button class="close-btn" id="closeNotifModal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="notifList" class="card-list"></div>
+      <p id="notifEmpty" class="empty-state hidden">No notifications yet.</p>
+    </div>
+  </div>
+</div>
+
+<!-- SHARE CARD MODAL -->
+<div id="shareCardModal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Share</h3>
+      <button class="close-btn" id="closeShareCardModal">✕</button>
+    </div>
+    <div class="modal-body" style="text-align:center;">
+      <img id="shareCardPreview" style="width:100%; border-radius:14px; margin-bottom:16px; box-shadow: var(--shadow);" />
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="downloadCardBtn">Download Image</button>
+        <button class="btn btn-secondary hidden" id="shareCardBtn">Share</button>
+      </div>
+    </div>
   </div>
 </div>
 
