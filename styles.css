@@ -197,6 +197,25 @@ label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transf
 .score-low { background: var(--score-low); }
 
 .empty-state { color: var(--text-muted); font-size: 14px; text-align: center; padding: 40px 10px; }
+
+#mapContainer {
+  height: 420px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.map-popup-score {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: white;
+  font-weight: 700;
+  font-size: 12px;
+  margin-right: 6px;
+}
 .hidden { display: none !important; }
 
 /* FEED (demo) */
@@ -209,6 +228,34 @@ label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transf
 .feed-action { font-size: 12px; color: var(--text-muted); }
 .feed-photo { width: 100%; height: 160px; border-radius: 10px; background: #ddd6c4 center/cover no-repeat; margin: 8px 0; }
 .feed-caption { font-size: 13px; }
+
+.feed-social-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #f0ebe0;
+}
+.cheer-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-dark);
+  font-family: inherit;
+  transition: transform 0.15s ease;
+}
+.cheer-btn .cheer-count { font-size: 12px; color: var(--text-muted); }
+.cheer-btn:active { transform: scale(1.2); }
+.comment-count-label { font-size: 12px; color: var(--text-muted); }
+.comment-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.comment-item { font-size: 12.5px; line-height: 1.4; }
+.comment-input-row { margin-top: 8px; }
+.comment-input-row .comment-input { margin-bottom: 0; font-size: 13px; padding: 8px 12px; }
 
 /* BOTTOM NAV */
 .bottom-nav {
@@ -310,6 +357,20 @@ label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transf
 
 .photo-preview-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 .photo-thumb { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; }
+.photo-remove-btn {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: white;
+  border: none;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
 
 .modal-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
 .btn {

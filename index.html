@@ -17,6 +17,8 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -72,10 +74,18 @@
 
   <!-- RANKINGS TAB -->
   <main id="tab-rankings" class="tab-panel">
-    <h2>My Rankings</h2>
+    <div class="section-title-row">
+      <h2>My Rankings</h2>
+      <div class="chip-row" style="margin-bottom:0;">
+        <button class="chip active" id="showListViewChip">List</button>
+        <button class="chip" id="showMapViewChip">Map</button>
+      </div>
+    </div>
     <input id="searchInput" type="text" placeholder="Search your destinations..." class="text-input" />
     <div class="chip-row" id="categoryFilters"></div>
     <div id="rankingsList" class="card-list"></div>
+    <div id="mapContainer" class="hidden"></div>
+    <p id="mapEmpty" class="empty-state hidden">None of your ranked destinations have a location pin yet. Use the location search when adding a destination to place them on the map.</p>
     <p id="rankingsEmpty" class="empty-state hidden">No ranked destinations yet. Tap "+" to add your first one.</p>
   </main>
 
@@ -224,6 +234,32 @@
       <button class="close-btn" id="closeDetailModal">✕</button>
     </div>
     <div class="modal-body" id="detailBody"></div>
+  </div>
+</div>
+
+<!-- EDIT DESTINATION MODAL -->
+<div id="editDestModal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Edit Destination</h3>
+      <button class="close-btn" id="closeEditDestModal">✕</button>
+    </div>
+    <div class="modal-body">
+      <label>Name</label>
+      <input id="editDestName" class="text-input" type="text" />
+      <label>Location</label>
+      <input id="editDestLocation" class="text-input" type="text" />
+      <label>Notes</label>
+      <textarea id="editDestNotes" class="text-input"></textarea>
+      <label>Tags (comma separated)</label>
+      <input id="editDestTags" class="text-input" />
+      <label>Photos</label>
+      <input id="editDestPhotos" type="file" accept="image/*" multiple class="text-input" />
+      <div id="editPhotoPreview" class="photo-preview-row"></div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="saveEditDestBtn">Save Changes</button>
+      </div>
+    </div>
   </div>
 </div>
 

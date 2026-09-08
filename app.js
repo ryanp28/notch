@@ -187,7 +187,7 @@ async function renderFeed() {
     const snap = await getDocs(query(collection(db, 'destinations'), where('ownerId', 'in', chunk), limit(50)));
     snap.docs.forEach(d => {
       const data = d.data();
-      if (data.status === 'ranked') items.push(data);
+      if (data.status === 'ranked') items.push({ id: d.id, ...data });
     });
   }
   items.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
@@ -215,9 +215,71 @@ async function renderFeed() {
       </div>
       ${photo ? `<div class="feed-photo" style="background-image:url('${photo}')"></div>` : ''}
       <div class="feed-caption"><strong>${escapeHtml(item.name)}</strong> · ${escapeHtml(item.category)} · Score ${formatScore(item.score)}</div>
+      <div class="feed-social-row">
+        <button class="cheer-btn" data-id="${item.id}">🤍 <span class="cheer-count">0</span></button>
+        <span class="comment-count-label" data-id="${item.id}">0 comments</span>
+      </div>
+      <div class="comment-list" data-id="${item.id}"></div>
+      <div class="comment-input-row">
+        <input class="text-input comment-input" data-id="${item.id}" placeholder="Add a comment..." />
+      </div>
     `;
     card.querySelector('.feed-user-row-clickable').addEventListener('click', () => openViewProfile(item.ownerId));
     list.appendChild(card);
+    attachSocialControls(card, item.id);
+  });
+}
+
+// ---------- FEED: REACTIONS & COMMENTS ----------
+async function attachSocialControls(card, destId) {
+  const cheerBtn = card.querySelector('.cheer-btn');
+  const commentListEl = card.querySelector('.comment-list');
+  const commentCountLabel = card.querySelector('.comment-count-label');
+  const commentInput = card.querySelector('.comment-input');
+
+  const reactionsSnap = await getDocs(query(collection(db, 'reactions'), where('destinationId', '==', destId)));
+  const myReactionId = `${destId}_${currentUser.uid}`;
+  const iAlreadyCheered = reactionsSnap.docs.some(d => d.id === myReactionId);
+  cheerBtn.classList.toggle('cheered', iAlreadyCheered);
+  cheerBtn.innerHTML = `${iAlreadyCheered ? '❤️' : '🤍'} <span class="cheer-count">${reactionsSnap.size}</span>`;
+
+  cheerBtn.addEventListener('click', async () => {
+    const reactionRef = doc(db, 'reactions', myReactionId);
+    const currentlyCheered = cheerBtn.classList.contains('cheered');
+    if (currentlyCheered) {
+      await deleteDoc(reactionRef);
+      cheerBtn.classList.remove('cheered');
+    } else {
+      await setDoc(reactionRef, { destinationId: destId, userId: currentUser.uid, createdAt: serverTimestamp() });
+      cheerBtn.classList.add('cheered');
+    }
+    const freshSnap = await getDocs(query(collection(db, 'reactions'), where('destinationId', '==', destId)));
+    cheerBtn.innerHTML = `${cheerBtn.classList.contains('cheered') ? '❤️' : '🤍'} <span class="cheer-count">${freshSnap.size}</span>`;
+  });
+
+  async function loadComments() {
+    const commentsSnap = await getDocs(query(collection(db, 'comments'), where('destinationId', '==', destId)));
+    const comments = commentsSnap.docs.map(d => d.data()).sort((a, b) => (a.createdAt?.toMillis?.() || 0) - (b.createdAt?.toMillis?.() || 0));
+    commentCountLabel.textContent = comments.length === 1 ? '1 comment' : `${comments.length} comments`;
+    commentListEl.innerHTML = comments.map(c => `
+      <div class="comment-item"><strong>${escapeHtml(c.authorName)}</strong> ${escapeHtml(c.text)}</div>
+    `).join('');
+  }
+  loadComments();
+
+  commentInput.addEventListener('keydown', async (e) => {
+    if (e.key !== 'Enter') return;
+    const text = commentInput.value.trim();
+    if (!text) return;
+    commentInput.value = '';
+    await addDoc(collection(db, 'comments'), {
+      destinationId: destId,
+      authorId: currentUser.uid,
+      authorName: state.profile.name || currentUser.email,
+      text,
+      createdAt: serverTimestamp()
+    });
+    loadComments();
   });
 }
 
@@ -236,16 +298,41 @@ function renderCategoryFilters() {
   });
 }
 
+let rankingsViewMode = 'list';
+document.getElementById('showListViewChip').addEventListener('click', () => {
+  rankingsViewMode = 'list';
+  document.getElementById('showListViewChip').classList.add('active');
+  document.getElementById('showMapViewChip').classList.remove('active');
+  renderRankings();
+});
+document.getElementById('showMapViewChip').addEventListener('click', () => {
+  rankingsViewMode = 'map';
+  document.getElementById('showMapViewChip').classList.add('active');
+  document.getElementById('showListViewChip').classList.remove('active');
+  renderRankings();
+});
+
 function renderRankings() {
   renderCategoryFilters();
   const list = document.getElementById('rankingsList');
   const empty = document.getElementById('rankingsEmpty');
+  const mapContainer = document.getElementById('mapContainer');
   const searchTerm = document.getElementById('searchInput').value.toLowerCase();
 
   let items = [...state.destinations];
   if (activeCategoryFilter !== 'All') items = items.filter(d => d.category === activeCategoryFilter);
   if (searchTerm) items = items.filter(d => d.name.toLowerCase().includes(searchTerm));
   items.sort((a, b) => b.score - a.score);
+
+  if (rankingsViewMode === 'map') {
+    list.classList.add('hidden');
+    mapContainer.classList.remove('hidden');
+    empty.classList.add('hidden');
+    renderMapView(items);
+    return;
+  }
+  mapContainer.classList.add('hidden');
+  list.classList.remove('hidden');
 
   list.innerHTML = '';
   empty.classList.toggle('hidden', items.length > 0 || state.destinations.length > 0);
@@ -272,6 +359,51 @@ function renderRankings() {
   });
 }
 document.getElementById('searchInput').addEventListener('input', renderRankings);
+
+// ---------- MAP VIEW ----------
+let leafletMap = null;
+let leafletMarkersLayer = null;
+
+function renderMapView(items) {
+  const withCoords = items.filter(d => typeof d.lat === 'number' && typeof d.lon === 'number');
+  const mapEmpty = document.getElementById('mapEmpty');
+  mapEmpty.classList.toggle('hidden', withCoords.length > 0);
+  if (withCoords.length === 0) return;
+
+  if (!leafletMap) {
+    leafletMap = L.map('mapContainer');
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 18
+    }).addTo(leafletMap);
+    leafletMarkersLayer = L.layerGroup().addTo(leafletMap);
+  } else {
+    leafletMarkersLayer.clearLayers();
+  }
+
+  const scoreColor = (score) => score >= 8 ? '#2e7d4f' : score >= 5 ? '#d4a437' : '#c0392b';
+
+  withCoords.forEach(dest => {
+    const marker = L.circleMarker([dest.lat, dest.lon], {
+      radius: 9,
+      color: '#ffffff',
+      weight: 2,
+      fillColor: scoreColor(dest.score),
+      fillOpacity: 1
+    });
+    marker.bindPopup(`
+      <span class="map-popup-score" style="background:${scoreColor(dest.score)}">${formatScore(dest.score)}</span>
+      <strong>${escapeHtml(dest.name)}</strong><br/>${escapeHtml(dest.category)}
+    `);
+    marker.addTo(leafletMarkersLayer);
+  });
+
+  const bounds = L.latLngBounds(withCoords.map(d => [d.lat, d.lon]));
+  setTimeout(() => {
+    leafletMap.invalidateSize();
+    leafletMap.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
+  }, 50);
+}
 
 // ---------- RENDER: WANT TO VISIT ----------
 function renderWantList() {
@@ -847,6 +979,7 @@ function openDetailModal(id, isWant) {
     <div class="detail-row"><label>Date</label>${dest.dateVisited}</div>
     <div class="detail-actions">
       ${isWant ? `<button class="btn btn-primary" id="markVisitedBtn">Mark as Visited</button>` : ''}
+      <button class="btn btn-secondary" id="editDestBtn">Edit</button>
       <button class="btn btn-danger" id="deleteBtn">Delete</button>
     </div>
   `;
@@ -855,6 +988,11 @@ function openDetailModal(id, isWant) {
     if (!confirm(`Delete ${dest.name}?`)) return;
     await deleteDoc(doc(db, 'destinations', id));
     detailModal.classList.add('hidden');
+  });
+
+  document.getElementById('editDestBtn').addEventListener('click', () => {
+    detailModal.classList.add('hidden');
+    openEditDestModal(dest);
   });
 
   if (isWant) {
@@ -872,3 +1010,59 @@ function openDetailModal(id, isWant) {
 
   detailModal.classList.remove('hidden');
 }
+
+// ---------- EDIT DESTINATION MODAL ----------
+const editDestModal = document.getElementById('editDestModal');
+let editDestId = null;
+let editDestPhotos = [];
+
+function openEditDestModal(dest) {
+  editDestId = dest.id;
+  editDestPhotos = [...(dest.photos || [])];
+  document.getElementById('editDestName').value = dest.name;
+  document.getElementById('editDestLocation').value = dest.location || '';
+  document.getElementById('editDestNotes').value = dest.notes || '';
+  document.getElementById('editDestTags').value = (dest.tags || []).join(', ');
+  document.getElementById('editDestPhotos').value = '';
+  renderEditPhotoPreview();
+  editDestModal.classList.remove('hidden');
+}
+document.getElementById('closeEditDestModal').addEventListener('click', () => editDestModal.classList.add('hidden'));
+
+function renderEditPhotoPreview() {
+  const preview = document.getElementById('editPhotoPreview');
+  preview.innerHTML = '';
+  editDestPhotos.forEach((src, i) => {
+    const wrap = document.createElement('div');
+    wrap.style.position = 'relative';
+    wrap.innerHTML = `<img class="photo-thumb" src="${src}" /><button class="photo-remove-btn" data-i="${i}">✕</button>`;
+    preview.appendChild(wrap);
+  });
+  preview.querySelectorAll('.photo-remove-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      editDestPhotos.splice(Number(btn.dataset.i), 1);
+      renderEditPhotoPreview();
+    });
+  });
+}
+
+document.getElementById('editDestPhotos').addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files).slice(0, MAX_PHOTOS - editDestPhotos.length);
+  for (const file of files) {
+    editDestPhotos.push(await compressImage(file));
+  }
+  renderEditPhotoPreview();
+});
+
+document.getElementById('saveEditDestBtn').addEventListener('click', async () => {
+  const name = document.getElementById('editDestName').value.trim();
+  if (!name) { alert('Please enter a name.'); return; }
+  await updateDoc(doc(db, 'destinations', editDestId), {
+    name,
+    location: document.getElementById('editDestLocation').value.trim(),
+    notes: document.getElementById('editDestNotes').value.trim(),
+    tags: document.getElementById('editDestTags').value.split(',').map(t => t.trim()).filter(Boolean),
+    photos: editDestPhotos
+  });
+  editDestModal.classList.add('hidden');
+});
